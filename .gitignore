@@ -1,0 +1,21 @@
+# Emacs
+*~
+\#*\#
+.\#*
+*.elc
+auto-save-list
+tramp
+.mc-lists.el
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Package managers
+.cask/
+elpa/
+*.el~
+
+# Test files
+test-output/
+*.log

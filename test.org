@@ -1,0 +1,52 @@
+#+TITLE: Test File for org-ai-prompt-mode
+#+AI_SYSTEM: You are a helpful assistant. Please respond concisely.
+#+AI_MODEL: claude-sonnet-4
+#+AI_COMMAND: claude
+
+* Installation Test
+
+This file helps you verify that org-ai-prompt-mode is working correctly.
+
+** Instructions
+
+1. Make sure org-ai-prompt-mode is enabled (check the mode line for " AI")
+2. If not enabled, run: M-x org-ai-prompt-mode
+3. Position your cursor in the PROMPT block below
+4. Press C-c C-c
+5. Wait a few seconds
+6. You should see a RESPONSE block appear below with the AI's answer
+
+** Test Prompt
+
+#+BEGIN_PROMPT
+Hello! Please respond with "org-ai-prompt-mode is working correctly!" if you can read this message.
+#+END_PROMPT
+
+** What to Check
+
+After execution, you should see:
+- A message in the minibuffer: "[org-ai-prompt] Executing claude..."
+- Another message: "[org-ai-prompt] AI request sent, waiting for response..."
+- Finally: "[org-ai-prompt] Response inserted successfully"
+- A new #+BEGIN_RESPONSE block should appear above this section
+
+** Troubleshooting
+
+If it doesn't work:
+
+1. Check the *Messages* buffer for errors (C-h e or M-x view-echo-area-messages)
+2. Verify claude is installed: Run in terminal: `which claude`
+3. Test claude manually: `claude "hello"`
+4. Check your configuration:
+   - M-x describe-variable RET org-ai-prompt-command
+   - M-x describe-variable RET org-ai-prompt-mode
+
+** Next Steps
+
+Once this works, try:
+- Modifying the #+AI_SYSTEM: property
+- Changing the #+AI_COMMAND: to your preferred AI tool
+- Creating multi-turn conversations (see example.org)
+- Including code blocks in your prompts
+
+See README.md for comprehensive documentation.
