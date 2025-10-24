@@ -1,52 +1,70 @@
-#+TITLE: Test File for org-ai-prompt-mode
-#+AI_SYSTEM: You are a helpful assistant. Please respond concisely.
-#+AI_MODEL: claude-sonnet-4
-#+AI_COMMAND: claude
+#+TITLE: org-ai-prompt Test File
 
 * Installation Test
 
-This file helps you verify that org-ai-prompt-mode is working correctly.
+This file helps verify that org-ai-prompt is working correctly.
 
 ** Instructions
 
-1. Make sure org-ai-prompt-mode is enabled (check the mode line for " AI")
-2. If not enabled, run: M-x org-ai-prompt-mode
-3. Position your cursor in the PROMPT block below
-4. Press C-c C-c
-5. Wait a few seconds
-6. You should see a RESPONSE block appear below with the AI's answer
+1. Make sure org-ai-prompt-mode is enabled
+   - Look for " AI" in the mode line (bottom of Emacs)
+   - If not visible, run: M-x org-ai-prompt-mode
+
+2. Position your cursor anywhere in the PROMPT block below
+
+3. Press C-c C-c
+
+4. Wait a few seconds
+
+5. A RESPONSE block should appear below with Claude's answer
 
 ** Test Prompt
 
 #+BEGIN_PROMPT
-Hello! Please respond with "org-ai-prompt-mode is working correctly!" if you can read this message.
+Say "Hello! org-ai-prompt is working correctly!" if you can read this.
 #+END_PROMPT
 
-** What to Check
+** What to Expect
 
-After execution, you should see:
-- A message in the minibuffer: "[org-ai-prompt] Executing claude..."
-- Another message: "[org-ai-prompt] AI request sent, waiting for response..."
+After pressing C-c C-c, you should see:
+- In the minibuffer: "[org-ai-prompt] Sending prompt to Claude..."
+- Then: "[org-ai-prompt] Waiting for Claude's response..."
 - Finally: "[org-ai-prompt] Response inserted successfully"
-- A new #+BEGIN_RESPONSE block should appear above this section
+- A new #+BEGIN_RESPONSE block appears above this section
 
 ** Troubleshooting
 
 If it doesn't work:
 
-1. Check the *Messages* buffer for errors (C-h e or M-x view-echo-area-messages)
-2. Verify claude is installed: Run in terminal: `which claude`
-3. Test claude manually: `claude "hello"`
-4. Check your configuration:
-   - M-x describe-variable RET org-ai-prompt-command
-   - M-x describe-variable RET org-ai-prompt-mode
+*** Check the mode is enabled
+- Look for " AI" in the mode line
+- If missing, run: M-x org-ai-prompt-mode
+
+*** Check Claude CLI is installed
+Open a terminal and run:
+: which claude
+: claude -p "test"
+
+Both should work.
+
+*** Check for errors
+- Press C-h e (or M-x view-echo-area-messages)
+- Look for [org-ai-prompt] error messages
+- Common issues:
+  - "Failed to start Claude CLI" → Claude not in PATH
+  - "PROMPT block is empty" → Make sure there's text in the block
+
+*** Still not working?
+Check your configuration in init file:
+- (add-to-list 'load-path "/path/to/org-dialog-eng")
+- (require 'org-ai-prompt)
+- (add-hook 'org-mode-hook #'org-ai-prompt-mode)
 
 ** Next Steps
 
-Once this works, try:
-- Modifying the #+AI_SYSTEM: property
-- Changing the #+AI_COMMAND: to your preferred AI tool
-- Creating multi-turn conversations (see example.org)
-- Including code blocks in your prompts
+Once this works:
+1. Try the examples in example.org
+2. Create your own .org files with PROMPT blocks
+3. Start using Claude from within your notes!
 
-See README.md for comprehensive documentation.
+See README.md for full documentation.

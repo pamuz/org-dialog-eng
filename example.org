@@ -1,186 +1,200 @@
-#+TITLE: Example Dialog Engineering Document
-#+AI_SYSTEM: You are a helpful programming assistant who provides clear, concise answers.
-#+AI_MODEL: claude-sonnet-4
-#+AI_COMMAND: claude
+#+TITLE: org-ai-prompt Examples
 
-* Introduction to Dialog Engineering
+* Getting Started
 
-This document demonstrates how to use org-ai-prompt-mode to have interactive
-conversations with AI tools directly within your org-mode documents.
+This file demonstrates how to use org-ai-prompt to send prompts to Claude
+from within your org files.
 
-* Python Data Processing Example
+** How to Use
 
-I'm working on a Python script to process data from a CSV file.
+1. Position your cursor anywhere inside a #+BEGIN_PROMPT block
+2. Press C-c C-c
+3. Claude's response appears in a #+BEGIN_RESPONSE block below
+
+* Simple Examples
+
+** Basic Question
+
+#+BEGIN_PROMPT
+What is the capital of France?
+#+END_PROMPT
+
+** Math Help
+
+#+BEGIN_PROMPT
+Explain the Pythagorean theorem in simple terms.
+#+END_PROMPT
+
+** Definition
+
+#+BEGIN_PROMPT
+What is recursion?
+#+END_PROMPT
+
+* Code Examples
+
+** Python - Type Hints
+
+I'm writing this Python function:
 
 #+BEGIN_SRC python
-import csv
-
-def process_data(filename):
-    with open(filename, 'r') as f:
-        reader = csv.reader(f)
-        data = list(reader)
-    return data
+def greet(name):
+    print(f"Hello {name}")
 #+END_SRC
 
 #+BEGIN_PROMPT
-Can you help me add error handling to this function? I want to handle:
-1. File not found errors
-2. CSV parsing errors
-3. Empty files
+How can I add type hints to this function?
 #+END_PROMPT
 
-#+BEGIN_RESPONSE
-Here's an improved version with comprehensive error handling:
+** JavaScript - Error Handling
 
-```python
-import csv
-import os
-
-def process_data(filename):
-    # Check if file exists
-    if not os.path.exists(filename):
-        raise FileNotFoundError(f"File '{filename}' not found")
-
-    try:
-        with open(filename, 'r') as f:
-            reader = csv.reader(f)
-            data = list(reader)
-
-            # Check for empty file
-            if not data:
-                raise ValueError(f"File '{filename}' is empty")
-
-            return data
-    except csv.Error as e:
-        raise ValueError(f"Error parsing CSV file: {e}")
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error processing file: {e}")
-```
-
-Key improvements:
-1. **File existence check**: Uses `os.path.exists()` before opening
-2. **CSV parsing errors**: Catches `csv.Error` exceptions
-3. **Empty file check**: Validates that data was actually read
-4. **General error handling**: Catches unexpected errors with proper context
-#+END_RESPONSE
-
-* Follow-up Questions
-
-Great! Now I'd like to add logging to track what's happening.
-
-#+BEGIN_PROMPT
-Can you add logging to the process_data function? I want to log:
-- When we start processing a file
-- If any errors occur
-- When processing completes successfully
-#+END_PROMPT
-
-* Testing Examples
-
-** Unit Testing
-
-#+BEGIN_PROMPT
-Can you write unit tests for the process_data function using pytest?
-Include tests for all the error cases we discussed.
-#+END_PROMPT
-
-** Integration Testing
-
-#+BEGIN_PROMPT
-What would be a good integration test strategy for this CSV processing code?
-#+END_PROMPT
-
-* JavaScript Example
-
-Let me switch to a different programming language.
+Here's my fetch function:
 
 #+BEGIN_SRC javascript
-function fetchUserData(userId) {
+function getUserData(userId) {
     return fetch(`/api/users/${userId}`)
         .then(response => response.json());
 }
 #+END_SRC
 
 #+BEGIN_PROMPT
-This function doesn't handle errors. Can you add proper error handling
-for network errors, HTTP errors, and JSON parsing errors?
+This function doesn't handle errors. Can you add proper error handling?
 #+END_PROMPT
 
-* Notes About This Workflow
+** SQL - Query Optimization
 
-The beauty of this approach is that:
+I have this query:
 
-1. **Context is preserved**: Each prompt has access to all previous conversation
-2. **Documentation included**: Your notes and code are right alongside the AI responses
-3. **Branching conversations**: You can re-execute earlier prompts to explore different paths
-4. **Version control friendly**: Everything is in plain text, works great with git
-
-** How to Use
-
-1. Enable org-ai-prompt-mode in your org buffer
-2. Write your notes, code, and questions
-3. Add a #+BEGIN_PROMPT block with your question
-4. Position cursor in the PROMPT block
-5. Press C-c C-c
-6. Wait for the AI response to appear below
-
-** Configuration
-
-You can configure the AI behavior at the file level using these properties:
-
-- =#+AI_SYSTEM:= - System prompt to set AI behavior
-- =#+AI_MODEL:= - Specify which model to use
-- =#+AI_TEMPERATURE:= - Control randomness (0.0 to 1.0)
-- =#+AI_MAX_TOKENS:= - Limit response length
-- =#+AI_COMMAND:= - Override which AI CLI to use
-
-** Multi-turn Conversations
-
-#+BEGIN_PROMPT
-What's the capital of France?
-#+END_PROMPT
-
-#+BEGIN_RESPONSE
-The capital of France is Paris.
-#+END_RESPONSE
-
-#+BEGIN_PROMPT
-What's the population of that city?
-#+END_PROMPT
-
-#+BEGIN_RESPONSE
-Paris has a population of approximately 2.2 million people within the city limits,
-and about 12 million in the greater metropolitan area (Île-de-France region).
-#+END_RESPONSE
-
-* Advanced Usage
-
-** Custom Adapters
-
-You can create custom adapters for any AI CLI tool. Here's an example:
-
-#+BEGIN_SRC elisp
-(defun my-custom-ai-adapter (messages system-prompt model temperature max-tokens)
-  "Custom adapter for my-ai-tool."
-  (let ((args '("chat" "--json")))
-    (when model
-      (setq args (append args (list "--model" model))))
-    ;; Format messages as JSON and pass to tool
-    (append args (list (json-encode messages)))))
-
-;; Use it
-(setq org-ai-prompt-args-function 'my-custom-ai-adapter)
+#+BEGIN_SRC sql
+SELECT * FROM users WHERE created_at > '2024-01-01';
 #+END_SRC
 
-** Different AI Tools in Different Files
+#+BEGIN_PROMPT
+How can I make this query more efficient?
+#+END_PROMPT
 
-Each org file can specify its own AI command:
+* Documentation Examples
 
-In file1.org:
-: #+AI_COMMAND: claude
+** Explaining Code
 
-In file2.org:
-: #+AI_COMMAND: gemini
+#+BEGIN_SRC python
+def fibonacci(n):
+    if n <= 1:
+        return n
+    return fibonacci(n-1) + fibonacci(n-2)
+#+END_SRC
 
-In file3.org:
-: #+AI_COMMAND: /usr/local/bin/my-custom-ai-wrapper.sh
+#+BEGIN_PROMPT
+Can you explain how this fibonacci function works and why it might be slow?
+#+END_PROMPT
+
+** Writing Tests
+
+#+BEGIN_SRC python
+def add(a, b):
+    return a + b
+#+END_SRC
+
+#+BEGIN_PROMPT
+Write pytest unit tests for this add function.
+#+END_PROMPT
+
+* General Writing
+
+** Email Draft
+
+#+BEGIN_PROMPT
+Help me write a professional email to my team announcing a new project deadline.
+#+END_PROMPT
+
+** Summary
+
+#+BEGIN_PROMPT
+Summarize the main benefits of using org-mode for note-taking in 3 bullet points.
+#+END_PROMPT
+
+* Tips
+
+** Keep Prompts Focused
+
+Each PROMPT block is independent - Claude only sees that specific prompt, not
+your whole document. This keeps responses focused and tokens low.
+
+** Multiple Prompts
+
+You can have as many PROMPT blocks as you want in a single file. Each one is
+independent.
+
+** Organize Your Prompts
+
+Use org-mode's outline structure to organize related prompts:
+
+* Project: Web App
+** Frontend Questions
+#+BEGIN_PROMPT
+What's the best way to handle state in React?
+#+END_PROMPT
+
+** Backend Questions
+#+BEGIN_PROMPT
+How should I structure my Express.js routes?
+#+END_PROMPT
+
+** Version Control
+
+Since everything is plain text, you can commit your .org files with prompts and
+responses to git. This creates a searchable history of your AI conversations!
+
+* Workflow Ideas
+
+** Daily Journal with AI Help
+
+* 2025-01-15
+
+** Morning thoughts
+I need to refactor the authentication module...
+
+#+BEGIN_PROMPT
+What are the key things to consider when refactoring authentication code?
+#+END_PROMPT
+
+** Learning New Concepts
+
+* Learning Rust
+
+** Ownership
+#+BEGIN_PROMPT
+Explain Rust's ownership system with a simple example.
+#+END_PROMPT
+
+** Borrowing
+#+BEGIN_PROMPT
+What's the difference between &T and &mut T in Rust?
+#+END_PROMPT
+
+** Code Review
+
+* My Code
+
+#+BEGIN_SRC python
+def process_data(data):
+    result = []
+    for item in data:
+        if item > 0:
+            result.append(item * 2)
+    return result
+#+END_SRC
+
+#+BEGIN_PROMPT
+Review this code for any improvements or issues.
+#+END_PROMPT
+
+* Troubleshooting
+
+If C-c C-c doesn't work:
+
+1. Check if org-ai-prompt-mode is enabled (look for " AI" in mode line)
+2. If not, run: M-x org-ai-prompt-mode
+3. Make sure Claude CLI is installed: claude -p "test"
+
+See README.md for full troubleshooting guide.
