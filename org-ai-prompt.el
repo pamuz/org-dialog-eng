@@ -446,14 +446,16 @@ This function is called by org-mode's C-c C-c mechanism.
 Returns t if a PROMPT block was executed, nil otherwise."
   (interactive)
   (let* ((element (org-element-at-point))
-         (type (org-element-type element)))
+         ;; Check if we're IN a block by looking at parent elements
+         ;; org-element-lineage walks up the tree to find containing special-blocks
+         (block (org-element-lineage element '(special-block) t)))
 
-    ;; Check if we're on a PROMPT block
-    (when (and (eq type 'special-block)
-               (org-ai-prompt--element-is-prompt-block-p element))
+    ;; Check if we found a PROMPT block in the lineage
+    (when (and block
+               (org-ai-prompt--element-is-prompt-block-p block))
 
       ;; Get the end position of this prompt block
-      (let* ((block-end (org-element-property :end element))
+      (let* ((block-end (org-element-property :end block))
              (marker (point-marker))
              (config (org-ai-prompt--get-config))
              (messages (org-ai-prompt--build-conversation-context block-end))
