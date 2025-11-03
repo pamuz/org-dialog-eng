@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2025-10-23 Thu 23:16 -->
+<!-- 2025-11-02 Sun 21:13 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>org-dialog-engineering</title>
@@ -193,6 +193,38 @@
     { background-color: #ffff00; color: #000000; font-weight: bold; }
   .org-svg { }
 </style>
+<script>
+  window.MathJax = {
+    tex: {
+      ams: {
+        multlineWidth: '85%'
+      },
+      tags: 'ams',
+      tagSide: 'right',
+      tagIndent: '.8em'
+    },
+    chtml: {
+      scale: 1.0,
+      displayAlign: 'center',
+      displayIndent: '0em'
+    },
+    svg: {
+      scale: 1.0,
+      displayAlign: 'center',
+      displayIndent: '0em'
+    },
+    output: {
+      font: 'mathjax-modern',
+      displayOverflow: 'overflow'
+    }
+  };
+</script>
+
+<script
+  id="MathJax-script"
+  async
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+</script>
 </head>
 <body>
 <div id="content" class="content">
@@ -201,51 +233,815 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org9977bc9">1. Introduction</a>
+<li><a href="#orgc8b5a1e">1. Introduction</a></li>
+<li><a href="#org04a9393">2. Keymap</a></li>
+<li><a href="#org1b943e1">3. PROMPT blocks</a></li>
+<li><a href="#orgac0fea9">4. Claude CLI reference</a></li>
+<li><a href="#orgc5b1414">5. ASSISTANT blocks</a>
 <ul>
-<li><a href="#org31db749">1.1. Features</a></li>
+<li><a href="#orgc53bd48">5.1. Features</a></li>
 </ul>
 </li>
-<li><a href="#orgb4a8db4">2. Package Header</a></li>
-<li><a href="#org5f4e6b3">3. Dependencies</a></li>
-<li><a href="#org6874078">4. Customization Group</a></li>
-<li><a href="#org1460e0c">5. Utility Functions</a></li>
-<li><a href="#org5790431">6. Block Detection and Content Extraction</a></li>
-<li><a href="#orgcbf329b">7. Context Building</a>
+<li><a href="#orgc51543d">6. Execution of PROMPT blocks to get ASSISTANT responses</a>
 <ul>
-<li><a href="#org92cde5a">7.1. Element to Text Conversion</a></li>
-<li><a href="#orgbb84679">7.2. Context Builder</a></li>
+<li><a href="#org7ede5a7">6.1. Including previous content as context</a></li>
+<li><a href="#orgddb2cd9">6.2. Making the PROMPT blocks executable</a></li>
+<li><a href="#orgc1bde22">6.3. Summary of Assistant Responses</a></li>
+<li><a href="#orge3ac328">6.4. Binding PROMPT block execution to keys</a></li>
 </ul>
 </li>
-<li><a href="#orge3c5930">8. Response Insertion</a>
-<ul>
-<li><a href="#org109cd1f">8.1. ANSI Code Stripping</a></li>
-<li><a href="#org7138b09">8.2. Helper Functions for Blank Lines</a></li>
-<li><a href="#org2cd5a9e">8.3. Response Block Insertion</a></li>
-</ul>
-</li>
-<li><a href="#orgada0d17">9. Process Execution</a>
-<ul>
-<li><a href="#orgaa04107">9.1. Process Filter</a></li>
-<li><a href="#orgf59fa98">9.2. Process Sentinel</a></li>
-<li><a href="#org9ecab12">9.3. Execute Claude</a></li>
-</ul>
-</li>
-<li><a href="#orgc4494aa">10. Block Execution</a></li>
-<li><a href="#org3fa304a">11. Minor Mode Definition</a></li>
+<li><a href="#org00c67a7">7. Making the PROMPT and ASSISTANT blocks look distinc from other org blocks</a></li>
+<li><a href="#org5cd9e95">8. Package Header</a></li>
+<li><a href="#orgbd9ac36">9. Dependencies</a></li>
 </ul>
 </div>
 </div>
-<div id="outline-container-org9977bc9" class="outline-2">
-<h2 id="org9977bc9"><span class="section-number-2">1.</span> Introduction</h2>
+<div id="outline-container-orgc8b5a1e" class="outline-2">
+<h2 id="orgc8b5a1e"><span class="section-number-2">1.</span> Introduction</h2>
 <div class="outline-text-2" id="text-1">
 <p>
 This is a literate programming implementation of <code>org-dialog-eng-mode</code>, an Emacs minor mode that integrates Claude AI into Org mode documents.
 </p>
+
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">;;; org-dialog-eng-mode-v2.el --- Claude integration for Org mode -*- lexical-binding: t; -*-
+(require 'org)
+(require 'org-element)
+
+(defface org-dialog-eng-prompt-block
+  '((t (:background "#2d3a55" :extend t)))
+  "Face for PROMPT block content."
+  :group 'org-dialog-eng)
+
+(defface org-dialog-eng-assistant-block
+  '((t (:background "#3d2f5b" :extend t)))
+  "Face for ASSISTANT block content."
+  :group 'org-dialog-eng)
+
+(defun org-dialog-eng--element-is-prompt-block-p (element)
+  "Return non-nil if ELEMENT is a PROMPT block."
+  (and (eq (org-element-type element) 'special-block)
+       (string-equal (upcase (org-element-property :type element)) "PROMPT")))
+
+(defun org-dialog-eng--extract-block-content (element)
+  "Extract the content from a special block ELEMENT."
+  (let* ((begin (org-element-property :contents-begin element))
+         (end (org-element-property :contents-end element)))
+    (when (and begin end)
+      (string-trim (buffer-substring-no-properties begin end)))))
+
+(defun org-dialog-eng--element-is-response-block-p (element)
+  "Return non-nil if ELEMENT is an ASSISTANT block."
+  (and (eq (org-element-type element) 'special-block)
+       (string-equal (upcase (org-element-property :type element)) "ASSISTANT")))
+
+(defun org-dialog-eng--get-preceding-context ()
+  "Extract all buffer content before the current PROMPT block."
+  (let* ((element (org-element-at-point))
+         (block (org-element-lineage element '(special-block) t))
+         (prompt-begin (org-element-property :begin block)))
+    (when prompt-begin
+      (string-trim
+       (buffer-substring-no-properties (point-min) prompt-begin)))))
+
+(defun org-dialog-eng--execute-prompt-block ()
+  "Execute the PROMPT block at point by spawning Claude subprocess and inserting response."
+  (interactive)
+  (let* ((element (org-element-at-point))
+         (prompt-content (org-dialog-eng--extract-block-content element))
+         (preceding-context (org-dialog-eng--get-preceding-context))
+         (prompt (format "
+&lt;instructions&gt;
+You are a helpful assitant that is helping me write an org document in
+Emacs that may contain code (literate programming style). I will provide
+you with a prompt and you should respond to it in a very concise
+manner. In case the prompt involves a request for code you shall not
+edit any files but instead provide the code as output, if the request
+involves modification of code you should provide just the changes
+necessary (think of a git diff). I will also provide you with some
+context (the content of the org file we have written so far) for you to
+be better informed.
+
+Whenever you see a #+begin_prompt ... #+end_prompt delimiters the
+content inside is a prompt I have given you in the past.
+
+Whenever you see a #+begin_assistant ... #+end_assistant delimiters, the
+content inside is a response you have given me, to the preceding prompt,
+in the past.
+
+CRITICAL: Since we are editing an org file together, any structure
+necessary for your response should be done in org syntax, NOT
+markdown. Never respond with markdown UNLESS expclitly asked to in the
+prompt.
+&lt;/instructions&gt;
+
+&lt;prompt&gt;
+%s
+&lt;/prompt&gt;
+
+&lt;context&gt;
+%s
+&lt;/context&gt;
+" prompt-content preceding-context)))
+    (unless prompt-content
+      (error "No prompt content found"))
+
+    ;; Get the end position of the current prompt block
+    (let* ((block-end (org-element-property :end element))
+           (output-buffer (generate-new-buffer " *claude-output*"))
+           (source-buffer (current-buffer)))
+
+      ;; Start the async process
+      (message "Sending prompt to Claude...")
+
+      (save-excursion
+        (goto-char block-end)
+        (forward-line)
+        (insert "\n#+begin_assistant\nClaude is working...\n#+end_assistant\n"))
+
+      (make-process
+       :name "claude-prompt"
+       :buffer output-buffer
+       :command (list "claude" "-p" prompt)
+       :sentinel
+       (lambda (process event)
+         (when (string-match-p "finished" event)
+           (when (buffer-live-p source-buffer)
+             (with-current-buffer source-buffer
+               (save-excursion
+                 ;; Move to the end of the prompt block
+                 (goto-char block-end)
+                 (forward-line)
+                 ;; Get the response from the output buffer
+                 (let ((response (with-current-buffer output-buffer
+                                   (buffer-substring-no-properties (point-min) (point-max)))))
+
+                   ;; Check if there's already an ASSISTANT block right after
+                   ;; If so, we should replace it; otherwise insert new one
+                   (let ((next-element (org-element-at-point)))
+                     (when (org-dialog-eng--element-is-response-block-p next-element)
+                       ;; Delete the existing ASSISTANT block
+                       (delete-region (org-element-property :begin next-element)
+                                      (org-element-property :end next-element))))
+
+                   ;; Insert the new ASSISTANT block
+                   (insert "\n#+begin_assistant\n")
+                   (insert (string-trim response))
+                   (insert "\n#+end_assistant\n")))))
+
+           ;; Clean up
+           (kill-buffer output-buffer)
+           (message "Claude response inserted")))
+
+       :stderr (get-buffer-create "*claude-errors*")))))
+(defvar org-dialog-eng-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'org-dialog-eng--execute-prompt-block)
+    map)
+  "Keymap for org-dialog-eng-mode.")
+
+(define-minor-mode org-dialog-eng-mode
+  "Minor mode for Claude integration in Org documents."
+  :lighter " OrgDialogEng"
+  :keymap org-dialog-eng-mode-map)
+
+(provide 'org-dialog-eng-mode-v2)
+
+(defvar org-dialog-eng-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'org-dialog-eng--execute-prompt-block)
+    map)
+  "Keymap for org-dialog-eng-mode.")
+
+(provide 'org-dialog-eng)
+  (define-minor-mode org-dialog-eng-mode
+    "Minor mode for Claude integration in Org mode.
+
+      This mode adds support for PROMPT blocks that send questions to Claude.
+
+      Key bindings:
+        \\[org-ctrl-c-ctrl-c] - Execute prompt block at point (sends to Claude)
+
+      Usage:
+        1. Create a #+BEGIN_PROMPT block with your question
+        2. Position cursor inside the block
+        3. Press C-c C-c
+        4. Wait for Claude to respond
+        5. Claude's response appears in a #+begin_assistant block below"
+    :lighter " AI"
+    :group 'org-dialog-eng
+    (if org-dialog-eng-mode
+        (org-dialog-eng--setup)
+      (org-dialog-eng--teardown)))
+
+  (defun org-dialog-eng--setup ()
+    "Set up org-dialog-eng-mode in the current buffer."
+    ;; Add our ctrl-c-ctrl-c hook
+    (add-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-block nil t)
+
+    ;; Add font-lock for block highlighting
+    (font-lock-add-keywords nil
+                          '(("^\\([ \t]*#\\+begin_prompt\n\\(?:.*\n\\)*?[ \t]*#\\+end_prompt.*$\\)"
+                             (1 'org-dialog-eng-prompt-block t))
+                            ("^\\([ \t]*#\\+begin_assistant\n\\(?:.*\n\\)*?[ \t]*#\\+end_assistant\\)"
+                             (1 'org-dialog-eng-assistant-block t)))
+                          t))
+
+
+  (defun org-dialog-eng--teardown ()
+    "Clean up org-dialog-eng-mode in the current buffer."
+    ;; Remove our ctrl-c-ctrl-c hook
+    (remove-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-block t)
+    (font-lock-remove-keywords nil
+                             '(("^\\([ \t]*#\\+begin_prompt\n\\(?:.*\n\\)*?[ \t]*#\\+end_prompt.*$\\)"
+                                (1 'org-dialog-eng-prompt-block t))
+                               ("^\\([ \t]*#\\+begin_assistant\n\\(?:.*\n\\)*?[ \t]*#\\+end_assistant\\)"
+                                (1 'org-dialog-eng-assistant-block t)))))
+
+  (provide 'org-dialog-eng)
+
+        ;;; org-dialog-eng.el ends here
+
+</pre>
 </div>
-<div id="outline-container-org31db749" class="outline-3">
-<h3 id="org31db749"><span class="section-number-3">1.1.</span> Features</h3>
-<div class="outline-text-3" id="text-1-1">
+</div>
+</div>
+<div id="outline-container-org04a9393" class="outline-2">
+<h2 id="org04a9393"><span class="section-number-2">2.</span> Keymap</h2>
+<div class="outline-text-2" id="text-2">
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">(defvar org-dialog-eng-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'org-dialog-eng--execute-prompt-block)
+    map)
+  "Keymap for org-dialog-eng-mode.")
+
+(provide 'org-dialog-eng)
+  (define-minor-mode org-dialog-eng-mode
+    "Minor mode for Claude integration in Org mode.
+
+      This mode adds support for PROMPT blocks that send questions to Claude.
+
+      Key bindings:
+        \\[org-ctrl-c-ctrl-c] - Execute prompt block at point (sends to Claude)
+
+      Usage:
+        1. Create a #+BEGIN_PROMPT block with your question
+        2. Position cursor inside the block
+        3. Press C-c C-c
+        4. Wait for Claude to respond
+        5. Claude's response appears in a #+begin_assistant block below"
+    :lighter " AI"
+    :group 'org-dialog-eng
+    (if org-dialog-eng-mode
+        (org-dialog-eng--setup)
+      (org-dialog-eng--teardown)))
+
+  (defun org-dialog-eng--setup ()
+    "Set up org-dialog-eng-mode in the current buffer."
+    ;; Add our ctrl-c-ctrl-c hook
+    (add-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-block nil t)
+
+    ;; Add font-lock for block highlighting
+    (font-lock-add-keywords nil
+                          '(("^\\([ \t]*#\\+begin_prompt\n\\(?:.*\n\\)*?[ \t]*#\\+end_prompt.*$\\)"
+                             (1 'org-dialog-eng-prompt-block t))
+                            ("^\\([ \t]*#\\+begin_assistant\n\\(?:.*\n\\)*?[ \t]*#\\+end_assistant\\)"
+                             (1 'org-dialog-eng-assistant-block t)))
+                          t))
+
+
+  (defun org-dialog-eng--teardown ()
+    "Clean up org-dialog-eng-mode in the current buffer."
+    ;; Remove our ctrl-c-ctrl-c hook
+    (remove-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-block t)
+    (font-lock-remove-keywords nil
+                             '(("^\\([ \t]*#\\+begin_prompt\n\\(?:.*\n\\)*?[ \t]*#\\+end_prompt.*$\\)"
+                                (1 'org-dialog-eng-prompt-block t))
+                               ("^\\([ \t]*#\\+begin_assistant\n\\(?:.*\n\\)*?[ \t]*#\\+end_assistant\\)"
+                                (1 'org-dialog-eng-assistant-block t)))))
+
+  (provide 'org-dialog-eng)
+
+        ;;; org-dialog-eng.el ends here
+
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org1b943e1" class="outline-2">
+<h2 id="org1b943e1"><span class="section-number-2">3.</span> PROMPT blocks</h2>
+<div class="outline-text-2" id="text-3">
+<p>
+This mode defines a new prompt block that can be executed (sent to an
+LLM to produce a response block out of). The syntax is
+</p>
+
+<pre class="example" id="org33b1149">
+#+begin_prompt
+Write the shortest implementation of a hello world in python
+#+end_prompt
+</pre>
+
+<p>
+Emacs' org-mode considers anything with the syntax
+`#+begin<sub>XXX\n&#x2026;\n</sub>#+end<sub>XXX</sub>` a <b>special block</b> (in contrast to
+built-in blocks like `SRC` and `EXAMPLE`). We will take advantage of
+this to introduce the concept of PROMPT blocks.
+</p>
+
+<p>
+In this mode code we will want to know if the pointer is at a prompt
+block. Here's a function for that:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">(defun org-dialog-eng--element-is-prompt-block-p (element)
+  "Return non-nil if ELEMENT is a PROMPT block."
+  (and (eq (org-element-type element) 'special-block)
+       (string-equal (upcase (org-element-property :type element)) "PROMPT")))
+
+</pre>
+</div>
+
+<p>
+For sending the prompt to an LLM we want to get the contents of the
+prompt block. Here's a function to get the contents of block as a
+string (sans the begin and end markers)
+</p>
+
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">(defun org-dialog-eng--extract-block-content (element)
+  "Extract the content from a special block ELEMENT."
+  (let* ((begin (org-element-property :contents-begin element))
+         (end (org-element-property :contents-end element)))
+    (when (and begin end)
+      (string-trim (buffer-substring-no-properties begin end)))))
+
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orgac0fea9" class="outline-2">
+<h2 id="orgac0fea9"><span class="section-number-2">4.</span> Claude CLI reference</h2>
+<div class="outline-text-2" id="text-4">
+<p>
+&gt; Complete reference for Claude Code command-line interface, including commands and flags.
+</p>
+
+<p>
+## CLI commands
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<tbody>
+<tr>
+<td class="org-left">Command</td>
+<td class="org-left">Description</td>
+<td class="org-left">Example</td>
+</tr>
+
+<tr>
+<td class="org-left">:---------------------------------</td>
+<td class="org-left">:---------------------------------------------</td>
+<td class="org-left">:-----------------------------------------------------------------</td>
+</tr>
+
+<tr>
+<td class="org-left">`claude`</td>
+<td class="org-left">Start interactive REPL</td>
+<td class="org-left">`claude`</td>
+</tr>
+
+<tr>
+<td class="org-left">`claude "query"`</td>
+<td class="org-left">Start REPL with initial prompt</td>
+<td class="org-left">`claude "explain this project"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`claude -p "query"`</td>
+<td class="org-left">Query via SDK, then exit</td>
+<td class="org-left">`claude -p "explain this function"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`cat file \</td>
+<td class="org-left">claude -p "query"`</td>
+<td class="org-left">Process piped content</td>
+<td class="org-left">`cat logs.txt \</td>
+<td class="org-left">claude -p "explain"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`claude -c`</td>
+<td class="org-left">Continue most recent conversation</td>
+<td class="org-left">`claude -c`</td>
+</tr>
+
+<tr>
+<td class="org-left">`claude -c -p "query"`</td>
+<td class="org-left">Continue via SDK</td>
+<td class="org-left">`claude -c -p "Check for type errors"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`claude -r "&lt;session-id&gt;" "query"`</td>
+<td class="org-left">Resume session by ID</td>
+<td class="org-left">`claude -r "abc123" "Finish this PR"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`claude update`</td>
+<td class="org-left">Update to latest version</td>
+<td class="org-left">`claude update`</td>
+</tr>
+
+<tr>
+<td class="org-left">`claude mcp`</td>
+<td class="org-left">Configure Model Context Protocol (MCP) servers</td>
+<td class="org-left">See the [Claude Code MCP documentation](/en/docs/claude-code/mcp).</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+## CLI flags
+</p>
+
+<p>
+Customize Claude Code's behavior with these command-line flags:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<tbody>
+<tr>
+<td class="org-left">Flag</td>
+<td class="org-left">Description</td>
+<td class="org-left">Example</td>
+</tr>
+
+<tr>
+<td class="org-left">:-------------------------------</td>
+<td class="org-left">:-------------------------------------------------------------------------------------------------------------------------------------------------------</td>
+<td class="org-left">:-------------------------------------------------------------------------------------------------</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;add-dir`</td>
+<td class="org-left">Add additional working directories for Claude to access (validates each path exists as a directory)</td>
+<td class="org-left">`claude &#x2013;add-dir ../apps ../lib`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;agents`</td>
+<td class="org-left">Define custom [subagents](/en/docs/claude-code/sub-agents) dynamically via JSON (see below for format)</td>
+<td class="org-left">`claude &#x2013;agents '{"reviewer":{"description":"Reviews code","prompt":"You are a code reviewer"}}'`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;allowedTools`</td>
+<td class="org-left">A list of tools that should be allowed without prompting the user for permission, in addition to [settings.json files](/en/docs/claude-code/settings)</td>
+<td class="org-left">`"Bash(git log:*)" "Bash(git diff:*)" "Read"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;disallowedTools`</td>
+<td class="org-left">A list of tools that should be disallowed without prompting the user for permission, in addition to [settings.json files](/en/docs/claude-code/settings)</td>
+<td class="org-left">`"Bash(git log:*)" "Bash(git diff:*)" "Edit"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;print`, `-p`</td>
+<td class="org-left">Print response without interactive mode (see [SDK documentation](/en/docs/claude-code/sdk) for programmatic usage details)</td>
+<td class="org-left">`claude -p "query"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;system-prompt`</td>
+<td class="org-left">Replace the entire system prompt with custom text (works in both interactive and print modes; added in v2.0.14)</td>
+<td class="org-left">`claude &#x2013;system-prompt "You are a Python expert"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;system-prompt-file`</td>
+<td class="org-left">Load system prompt from a file, replacing the default prompt (print mode only; added in v1.0.54)</td>
+<td class="org-left">`claude -p &#x2013;system-prompt-file ./custom-prompt.txt "query"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;append-system-prompt`</td>
+<td class="org-left">Append custom text to the end of the default system prompt (works in both interactive and print modes; added in v1.0.55)</td>
+<td class="org-left">`claude &#x2013;append-system-prompt "Always use TypeScript"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;output-format`</td>
+<td class="org-left">Specify output format for print mode (options: `text`, `json`, `stream-json`)</td>
+<td class="org-left">`claude -p "query" &#x2013;output-format json`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;input-format`</td>
+<td class="org-left">Specify input format for print mode (options: `text`, `stream-json`)</td>
+<td class="org-left">`claude -p &#x2013;output-format json &#x2013;input-format stream-json`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;include-partial-messages`</td>
+<td class="org-left">Include partial streaming events in output (requires `&#x2013;print` and `&#x2013;output-format=stream-json`)</td>
+<td class="org-left">`claude -p &#x2013;output-format stream-json &#x2013;include-partial-messages "query"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;verbose`</td>
+<td class="org-left">Enable verbose logging, shows full turn-by-turn output (helpful for debugging in both print and interactive modes)</td>
+<td class="org-left">`claude &#x2013;verbose`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;max-turns`</td>
+<td class="org-left">Limit the number of agentic turns in non-interactive mode</td>
+<td class="org-left">`claude -p &#x2013;max-turns 3 "query"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;model`</td>
+<td class="org-left">Sets the model for the current session with an alias for the latest model (`sonnet` or `opus`) or a model's full name</td>
+<td class="org-left">`claude &#x2013;model claude-sonnet-4-5-20250929`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;permission-mode`</td>
+<td class="org-left">Begin in a specified [permission mode](iam#permission-modes)</td>
+<td class="org-left">`claude &#x2013;permission-mode plan`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;permission-prompt-tool`</td>
+<td class="org-left">Specify an MCP tool to handle permission prompts in non-interactive mode</td>
+<td class="org-left">`claude -p &#x2013;permission-prompt-tool mcp<sub>auth</sub><sub>tool</sub> "query"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;resume`</td>
+<td class="org-left">Resume a specific session by ID, or by choosing in interactive mode</td>
+<td class="org-left">`claude &#x2013;resume abc123 "query"`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;continue`</td>
+<td class="org-left">Load the most recent conversation in the current directory</td>
+<td class="org-left">`claude &#x2013;continue`</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;dangerously-skip-permissions`</td>
+<td class="org-left">Skip permission prompts (use with caution)</td>
+<td class="org-left">`claude &#x2013;dangerously-skip-permissions`</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+&lt;Tip&gt;
+  The `&#x2013;output-format json` flag is particularly useful for scripting and
+  automation, allowing you to parse Claude's responses programmatically.
+&lt;/Tip&gt;
+</p>
+
+<p>
+### Agents flag format
+</p>
+
+<p>
+The `&#x2013;agents` flag accepts a JSON object that defines one or more custom subagents. Each subagent requires a unique name (as the key) and a definition object with the following fields:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<tbody>
+<tr>
+<td class="org-left">Field</td>
+<td class="org-left">Required</td>
+<td class="org-left">Description</td>
+</tr>
+
+<tr>
+<td class="org-left">:------------</td>
+<td class="org-left">:-------</td>
+<td class="org-left">:--------------------------------------------------------------------------------------------------------------</td>
+</tr>
+
+<tr>
+<td class="org-left">`description`</td>
+<td class="org-left">Yes</td>
+<td class="org-left">Natural language description of when the subagent should be invoked</td>
+</tr>
+
+<tr>
+<td class="org-left">`prompt`</td>
+<td class="org-left">Yes</td>
+<td class="org-left">The system prompt that guides the subagent's behavior</td>
+</tr>
+
+<tr>
+<td class="org-left">`tools`</td>
+<td class="org-left">No</td>
+<td class="org-left">Array of specific tools the subagent can use (e.g., `["Read", "Edit", "Bash"]`). If omitted, inherits all tools</td>
+</tr>
+
+<tr>
+<td class="org-left">`model`</td>
+<td class="org-left">No</td>
+<td class="org-left">Model alias to use: `sonnet`, `opus`, or `haiku`. If omitted, uses the default subagent model</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Example:
+</p>
+
+<p>
+```bash  theme={null}
+claude &#x2013;agents '{
+  "code-reviewer": {
+    "description": "Expert code reviewer. Use proactively after code changes.",
+    "prompt": "You are a senior code reviewer. Focus on code quality, security, and best practices.",
+    "tools": ["Read", "Grep", "Glob", "Bash"],
+    "model": "sonnet"
+  },
+  "debugger": {
+    "description": "Debugging specialist for errors and test failures.",
+    "prompt": "You are an expert debugger. Analyze errors, identify root causes, and provide fixes."
+  }
+}'
+```
+</p>
+
+<p>
+For more details on creating and using subagents, see the [subagents documentation](/en/docs/claude-code/sub-agents).
+</p>
+
+<p>
+### System prompt flags
+</p>
+
+<p>
+Claude Code provides three flags for customizing the system prompt, each serving a different purpose:
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-left" />
+</colgroup>
+<tbody>
+<tr>
+<td class="org-left">Flag</td>
+<td class="org-left">Behavior</td>
+<td class="org-left">Modes</td>
+<td class="org-left">Use Case</td>
+</tr>
+
+<tr>
+<td class="org-left">:-----------------------</td>
+<td class="org-left">:---------------------------------</td>
+<td class="org-left">:------------------</td>
+<td class="org-left">:-------------------------------------------------------------------</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;system-prompt`</td>
+<td class="org-left"><b><b>Replaces</b></b> entire default prompt</td>
+<td class="org-left">Interactive + Print</td>
+<td class="org-left">Complete control over Claude's behavior and instructions</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;system-prompt-file`</td>
+<td class="org-left"><b><b>Replaces</b></b> with file contents</td>
+<td class="org-left">Print only</td>
+<td class="org-left">Load prompts from files for reproducibility and version control</td>
+</tr>
+
+<tr>
+<td class="org-left">`&#x2013;append-system-prompt`</td>
+<td class="org-left"><b><b>Appends</b></b> to default prompt</td>
+<td class="org-left">Interactive + Print</td>
+<td class="org-left">Add specific instructions while keeping default Claude Code behavior</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+<b><b>When to use each:</b></b>
+</p>
+
+<p>
+<b><b>`&#x2013;system-prompt`</b></b>: Use when you need complete control over Claude's system prompt. This removes all default Claude Code instructions, giving you a blank slate.
+ ```bash  theme={null}
+ claude &#x2013;system-prompt "You are a Python expert who only writes type-annotated code"
+ ```
+</p>
+
+<p>
+<b><b>`&#x2013;system-prompt-file`</b></b>: Use when you want to load a custom prompt from a file, useful for team consistency or version-controlled prompt templates.
+ ```bash  theme={null}
+ claude -p &#x2013;system-prompt-file ./prompts/code-review.txt "Review this PR"
+ ```
+</p>
+
+<p>
+<b><b>`&#x2013;append-system-prompt`</b></b>: Use when you want to add specific instructions while keeping Claude Code's default capabilities intact. This is the safest option for most use cases.
+ ```bash  theme={null}
+ claude &#x2013;append-system-prompt "Always use TypeScript and include JSDoc comments"
+ ```
+</p>
+
+<p>
+&lt;Note&gt;
+  `&#x2013;system-prompt` and `&#x2013;system-prompt-file` are mutually exclusive. You cannot use both flags simultaneously.
+&lt;/Note&gt;
+</p>
+
+<p>
+&lt;Tip&gt;
+  For most use cases, `&#x2013;append-system-prompt` is recommended as it preserves Claude Code's built-in capabilities while adding your custom requirements. Use `&#x2013;system-prompt` or `&#x2013;system-prompt-file` only when you need complete control over the system prompt.
+&lt;/Tip&gt;
+</p>
+
+<p>
+For detailed information about print mode (`-p`) including output formats,
+streaming, verbose logging, and programmatic usage, see the
+[SDK documentation](/en/docs/claude-code/sdk).
+</p>
+
+<p>
+## See also
+</p>
+</div>
+</div>
+<div id="outline-container-orgc5b1414" class="outline-2">
+<h2 id="orgc5b1414"><span class="section-number-2">5.</span> ASSISTANT blocks</h2>
+<div class="outline-text-2" id="text-5">
+<p>
+In org-dialog-eng mode, the response for a prompt coming from the LLM
+will be written into the document, as an ASSISTANT block, right below
+the PROMPT block that created it.
+</p>
+
+<p>
+In a similar way to how we define helper functions for the PROMPT
+blocks we define equivalents for the ASSITANT blocks.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">(defun org-dialog-eng--element-is-response-block-p (element)
+  "Return non-nil if ELEMENT is an ASSISTANT block."
+  (and (eq (org-element-type element) 'special-block)
+       (string-equal (upcase (org-element-property :type element)) "ASSISTANT")))
+
+</pre>
+</div>
+</div>
+<div id="outline-container-orgc53bd48" class="outline-3">
+<h3 id="orgc53bd48"><span class="section-number-3">5.1.</span> Features</h3>
+<div class="outline-text-3" id="text-5-1">
 <ul class="org-ul">
 <li>Execute PROMPT blocks with <code>C-c C-c</code> to send questions to Claude</li>
 <li>Get responses in assistant blocks automatically</li>
@@ -255,9 +1051,421 @@ This is a literate programming implementation of <code>org-dialog-eng-mode</code
 </div>
 </div>
 </div>
-<div id="outline-container-orgb4a8db4" class="outline-2">
-<h2 id="orgb4a8db4"><span class="section-number-2">2.</span> Package Header</h2>
-<div class="outline-text-2" id="text-2">
+<div id="outline-container-orgc51543d" class="outline-2">
+<h2 id="orgc51543d"><span class="section-number-2">6.</span> Execution of PROMPT blocks to get ASSISTANT responses</h2>
+<div class="outline-text-2" id="text-6">
+<p>
+The following takes place when the user executes a PROMPT block from
+within an org-mode buffer:
+</p>
+
+<ol class="org-ol">
+<li>The buffer becomes read only (to prevent the user from writing more
+before the prompt is executed and the result inserted).</li>
+<li>An ASSISTANT block is inserted immediately after the executed
+PROMPT block for immediate feedback. It contains the temporary text
+"Claude is working&#x2026;"</li>
+<li>A subprocess is spawned with prompt and a prompt formatted with a
+general instruction, the content from the PROMPT block being
+executed, and an additional context (the content of the file up to
+the PROMPT block being executed).</li>
+<li>Once the subprocess finishes and Claude has responded, the response
+is inserted in the ASSISTANT block, replacing the "Claude is
+working&#x2026;" placeholder.</li>
+<li>The buffer becomes writeable to the user again.</li>
+</ol>
+
+<p>
+Notes:
+</p>
+<ul class="org-ul">
+<li>Claude will be executed with `&#x2013;print` flag to not start an
+interactive session.</li>
+</ul>
+</div>
+<div id="outline-container-org7ede5a7" class="outline-3">
+<h3 id="org7ede5a7"><span class="section-number-3">6.1.</span> Including previous content as context</h3>
+<div class="outline-text-3" id="text-6-1">
+<p>
+In literate programming, the file content up to the current PROMPT
+block should be sent as context with each query. We'll implement a
+function to extract this preceding content as a string.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">(defun org-dialog-eng--get-preceding-context ()
+  "Extract all buffer content before the current PROMPT block."
+  (let* ((element (org-element-at-point))
+         (block (org-element-lineage element '(special-block) t))
+         (prompt-begin (org-element-property :begin block)))
+    (when prompt-begin
+      (string-trim
+       (buffer-substring-no-properties (point-min) prompt-begin)))))
+
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orgddb2cd9" class="outline-3">
+<h3 id="orgddb2cd9"><span class="section-number-3">6.2.</span> Making the PROMPT blocks executable</h3>
+<div class="outline-text-3" id="text-6-2">
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">(defun org-dialog-eng--execute-prompt-block ()
+  "Execute the PROMPT block at point by spawning Claude subprocess and inserting response."
+  (interactive)
+  (let* ((element (org-element-at-point))
+         (prompt-content (org-dialog-eng--extract-block-content element))
+         (preceding-context (org-dialog-eng--get-preceding-context))
+         (prompt (format "
+&lt;instructions&gt;
+You are a helpful assitant that is helping me write an org document in
+Emacs that may contain code (literate programming style). I will provide
+you with a prompt and you should respond to it in a very concise
+manner. In case the prompt involves a request for code you shall not
+edit any files but instead provide the code as output, if the request
+involves modification of code you should provide just the changes
+necessary (think of a git diff). I will also provide you with some
+context (the content of the org file we have written so far) for you to
+be better informed.
+
+Whenever you see a #+begin_prompt ... #+end_prompt delimiters the
+content inside is a prompt I have given you in the past.
+
+Whenever you see a #+begin_assistant ... #+end_assistant delimiters, the
+content inside is a response you have given me, to the preceding prompt,
+in the past.
+
+CRITICAL: Since we are editing an org file together, any structure
+necessary for your response should be done in org syntax, NOT
+markdown. Never respond with markdown UNLESS expclitly asked to in the
+prompt.
+&lt;/instructions&gt;
+
+&lt;prompt&gt;
+%s
+&lt;/prompt&gt;
+
+&lt;context&gt;
+%s
+&lt;/context&gt;
+" prompt-content preceding-context)))
+    (unless prompt-content
+      (error "No prompt content found"))
+
+    ;; Get the end position of the current prompt block
+    (let* ((block-end (org-element-property :end element))
+           (output-buffer (generate-new-buffer " *claude-output*"))
+           (source-buffer (current-buffer)))
+
+      ;; Start the async process
+      (message "Sending prompt to Claude...")
+
+      (save-excursion
+        (goto-char block-end)
+        (forward-line)
+        (insert "\n#+begin_assistant\nClaude is working...\n#+end_assistant\n"))
+
+      (make-process
+       :name "claude-prompt"
+       :buffer output-buffer
+       :command (list "claude" "-p" prompt)
+       :sentinel
+       (lambda (process event)
+         (when (string-match-p "finished" event)
+           (when (buffer-live-p source-buffer)
+             (with-current-buffer source-buffer
+               (save-excursion
+                 ;; Move to the end of the prompt block
+                 (goto-char block-end)
+                 (forward-line)
+                 ;; Get the response from the output buffer
+                 (let ((response (with-current-buffer output-buffer
+                                   (buffer-substring-no-properties (point-min) (point-max)))))
+
+                   ;; Check if there's already an ASSISTANT block right after
+                   ;; If so, we should replace it; otherwise insert new one
+                   (let ((next-element (org-element-at-point)))
+                     (when (org-dialog-eng--element-is-response-block-p next-element)
+                       ;; Delete the existing ASSISTANT block
+                       (delete-region (org-element-property :begin next-element)
+                                      (org-element-property :end next-element))))
+
+                   ;; Insert the new ASSISTANT block
+                   (insert "\n#+begin_assistant\n")
+                   (insert (string-trim response))
+                   (insert "\n#+end_assistant\n")))))
+
+           ;; Clean up
+           (kill-buffer output-buffer)
+           (message "Claude response inserted")))
+
+       :stderr (get-buffer-create "*claude-errors*")))))
+</pre>
+</div>
+
+<div class="prompt" id="org1e58fdd">
+<p>
+going great
+</p>
+
+</div>
+
+<div class="assistant" id="org72b7880">
+<p>
+Thanks! It looks like the implementation is working well. Is there anything specific you'd like me to help with next, or would you like me to review what we've built so far?
+[?25h[?25h
+</p>
+
+</div>
+
+<div class="assistant" id="org65ebf3e">
+<p>
+Claude is working&#x2026;
+</p>
+
+</div>
+
+<div class="prompt" id="org00c5918">
+<p>
+can you give me a summary of your responses?
+</p>
+
+</div>
+
+<p>
+#+begin<sub>assistant</sub>
+Based on the context, here's a summary of my previous responses in this org document:
+</p>
+</div>
+</div>
+<div id="outline-container-orgc1bde22" class="outline-3">
+<h3 id="orgc1bde22"><span class="section-number-3">6.3.</span> Summary of Assistant Responses</h3>
+<div class="outline-text-3" id="text-6-3">
+<ol class="org-ol">
+<li><b>Initial positive feedback</b> - Acknowledged that the implementation was working well and offered to help with next steps or review the code</li>
+
+<li><b>Follow-up offer</b> - Asked if there was anything specific needed or if a review of the current implementation would be helpful</li>
+</ol>
+
+<p>
+That's all the responses so far - there were just two brief messages confirming progress and offering continued assistance.
+[?25h[?25h
+#+end<sub>assistant</sub>
+</p>
+
+<div class="assistant" id="orga67d569">
+<p>
+Claude is working&#x2026;
+</p>
+
+</div>
+</div>
+</div>
+<div id="outline-container-orge3ac328" class="outline-3">
+<h3 id="orge3ac328"><span class="section-number-3">6.4.</span> Binding PROMPT block execution to keys</h3>
+<div class="outline-text-3" id="text-6-4">
+<div class="prompt" id="org4e40b47">
+<p>
+How would I bind the execute-prompt-block function to Ctrl-c Ctrl-c
+in this mode we are writing?
+</p>
+
+</div>
+
+<div class="assistant" id="orgfcd40ab">
+<p>
+To bind `org-dialog-eng&#x2013;execute-prompt-block` to `C-c C-c` in your mode, you need to:
+</p>
+
+<ol class="org-ol">
+<li>Create a keymap for the mode</li>
+<li>Define the key binding in that keymap</li>
+<li>Make the minor mode use that keymap</li>
+</ol>
+
+<p>
+Here's the code to add:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">(defvar org-dialog-eng-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'org-dialog-eng--execute-prompt-block)
+    map)
+  "Keymap for org-dialog-eng-mode.")
+
+(define-minor-mode org-dialog-eng-mode
+  "Minor mode for Claude integration in Org documents."
+  :lighter " OrgDialogEng"
+  :keymap org-dialog-eng-mode-map)
+
+(provide 'org-dialog-eng-mode-v2)
+</pre>
+</div>
+
+<p>
+The key parts:
+</p>
+<ul class="org-ul">
+<li>`defvar org-dialog-eng-mode-map` creates the keymap</li>
+<li>`define-key` binds `C-c C-c` to your function</li>
+<li>`define-minor-mode` creates the mode and associates it with the keymap via `:keymap`</li>
+<li>The `:lighter` adds " OrgDialogEng" to the mode line when active</li>
+</ul>
+
+<p>
+Users would activate it with `M-x org-dialog-eng-mode` in an org buffer.
+</p>
+
+<p>
+To bind `org-dialog-eng&#x2013;execute-prompt-block` to `C-c C-c` in your mode, you need to:
+</p>
+
+<ol class="org-ol">
+<li>Create a keymap for the mode</li>
+<li>Define the key binding in that keymap</li>
+<li>Make the minor mode use that keymap</li>
+</ol>
+
+<p>
+Here's the code to add:
+</p>
+
+<p>
+```emacs-lisp
+(defvar org-dialog-eng-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'org-dialog-eng&#x2013;execute-prompt-block)
+    map)
+  "Keymap for org-dialog-eng-mode.")
+</p>
+
+<p>
+(define-minor-mode org-dialog-eng-mode
+  "Minor mode for Claude integration in Org documents."
+  :lighter " OrgDialogEng"
+  :keymap org-dialog-eng-mode-map)
+</p>
+
+<p>
+(provide 'org-dialog-eng-mode-v2)
+```
+</p>
+
+<p>
+The key parts:
+</p>
+<ul class="org-ul">
+<li>`defvar org-dialog-eng-mode-map` creates the keymap</li>
+<li>`define-key` binds `C-c C-c` to your function</li>
+<li>`define-minor-mode` creates the mode and associates it with the keymap via `:keymap`</li>
+<li>The `:lighter` adds " OrgDialogEng" to the mode line when active</li>
+</ul>
+
+<p>
+Users would activate it with `M-x org-dialog-eng-mode` in an org buffer.
+</p>
+
+<p>
+Create a keymap for the mode
+</p>
+
+<p>
+Define the key binding in that keymap
+</p>
+
+<p>
+Make the minor mode use that keymap
+</p>
+
+<p>
+Here's the code to add:
+</p>
+
+<p>
+```emacs-lisp
+(defvar org-dialog-eng-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'org-dialog-eng&#x2013;execute-prompt-block)
+    map)
+  "Keymap for org-dialog-eng-mode.")
+</p>
+
+<p>
+(define-minor-mode org-dialog-eng-mode
+  "Minor mode for Claude integration in Org documents."
+  :lighter " OrgDialogEng"
+  :keymap org-dialog-eng-mode-map)
+</p>
+
+<p>
+(provide 'org-dialog-eng-mode-v2)
+```
+</p>
+
+<p>
+The key parts:
+</p>
+
+<ul class="org-ul">
+<li>`defvar org-dialog-eng-mode-map` creates the keymap</li>
+<li>`define-key` binds `C-c C-c` to your function</li>
+<li>`define-minor-mode` creates the mode and associates it with the keymap via `:keymap`</li>
+<li>The `:lighter` adds " OrgDialogEng" to the mode line when active</li>
+</ul>
+
+<p>
+Users would activate it with `M-x org-dialog-eng-mode` in an org buffer.
+</p>
+
+<p>
+`defvar org-dialog-eng-mode-map` creates the keymap
+</p>
+
+<p>
+`define-key` binds `C-c C-c` to your function
+</p>
+
+<p>
+`define-minor-mode` creates the mode and associates it with the keymap via `:keymap`
+</p>
+
+<p>
+The `:lighter` adds " OrgDialogEng" to the mode line when active
+</p>
+
+<p>
+Users would activate it with `M-x org-dialog-eng-mode` in an org buffer.
+</p>
+
+<p>
+Help me understand what this file is and what you'd like me to do with it.
+</p>
+
+</div>
+</div>
+</div>
+</div>
+<div id="outline-container-org00c67a7" class="outline-2">
+<h2 id="org00c67a7"><span class="section-number-2">7.</span> Making the PROMPT and ASSISTANT blocks look distinc from other org blocks</h2>
+<div class="outline-text-2" id="text-7">
+<div class="org-src-container">
+<pre class="src src-emacs-lisp">(defface org-dialog-eng-prompt-block
+  '((t (:background "#2d3a55" :extend t)))
+  "Face for PROMPT block content."
+  :group 'org-dialog-eng)
+
+(defface org-dialog-eng-assistant-block
+  '((t (:background "#3d2f5b" :extend t)))
+  "Face for ASSISTANT block content."
+  :group 'org-dialog-eng)
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org5cd9e95" class="outline-2">
+<h2 id="org5cd9e95"><span class="section-number-2">8.</span> Package Header</h2>
+<div class="outline-text-2" id="text-8">
 <div class="org-src-container">
 <pre class="src src-emacs-lisp">;;; org-dialog-eng.el --- Claude integration for Org mode -*- lexical-binding: t; -*-
 
@@ -292,9 +1500,9 @@ This is a literate programming implementation of <code>org-dialog-eng-mode</code
 </div>
 </div>
 </div>
-<div id="outline-container-org5f4e6b3" class="outline-2">
-<h2 id="org5f4e6b3"><span class="section-number-2">3.</span> Dependencies</h2>
-<div class="outline-text-2" id="text-3">
+<div id="outline-container-orgbd9ac36" class="outline-2">
+<h2 id="orgbd9ac36"><span class="section-number-2">9.</span> Dependencies</h2>
+<div class="outline-text-2" id="text-9">
 <div class="org-src-container">
 <pre class="src src-emacs-lisp">(require 'org)
 (require 'org-element)
@@ -302,466 +1510,10 @@ This is a literate programming implementation of <code>org-dialog-eng-mode</code
 </div>
 </div>
 </div>
-<div id="outline-container-org6874078" class="outline-2">
-<h2 id="org6874078"><span class="section-number-2">4.</span> Customization Group</h2>
-<div class="outline-text-2" id="text-4">
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">;;; Customization
-
-(defgroup org-dialog-eng nil
-  "Claude AI integration for Org mode."
-  :group 'org
-  :prefix "org-dialog-eng-")
-
-(defcustom org-dialog-eng-command "claude"
-  "Command to invoke Claude CLI."
-  :type 'string
-  :group 'org-dialog-eng)
-
-(defcustom org-dialog-eng-executable-path nil
-  "Path to Claude CLI executable.
-If nil, the command will be searched in PATH."
-  :type '(choice (const :tag "Use PATH" nil)
-                 (file :tag "Executable path"))
-  :group 'org-dialog-eng)
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-org1460e0c" class="outline-2">
-<h2 id="org1460e0c"><span class="section-number-2">5.</span> Utility Functions</h2>
-<div class="outline-text-2" id="text-5">
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">;;; Utility Functions
-
-(defun org-dialog-eng--message (format-string &amp;rest args)
-  "Display a message for org-dialog-eng with FORMAT-STRING and ARGS."
-  (message "[org-dialog-eng] %s" (apply #'format format-string args)))
-
-(defun org-dialog-eng--error (format-string &amp;rest args)
-  "Display an error message for org-dialog-eng with FORMAT-STRING and ARGS."
-  (error "[org-dialog-eng] %s" (apply #'format format-string args)))
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-org5790431" class="outline-2">
-<h2 id="org5790431"><span class="section-number-2">6.</span> Block Detection and Content Extraction</h2>
-<div class="outline-text-2" id="text-6">
-<p>
-These functions detect PROMPT and RESPONSE blocks and extract their content.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">;;; Block Detection and Content Extraction
-
-(defun org-dialog-eng--element-is-prompt-block-p (element)
-  "Return non-nil if ELEMENT is a PROMPT block."
-  (and (eq (org-element-type element) 'special-block)
-       (string-equal (upcase (org-element-property :type element)) "PROMPT")))
-
-(defun org-dialog-eng--element-is-response-block-p (element)
-  "Return non-nil if ELEMENT is an ASSISTANT block."
-  (and (eq (org-element-type element) 'special-block)
-       (string-equal (upcase (org-element-property :type element)) "ASSISTANT")))
-
-(defun org-dialog-eng--extract-block-content (element)
-  "Extract the content from a special block ELEMENT."
-  (let* ((begin (org-element-property :contents-begin element))
-         (end (org-element-property :contents-end element)))
-    (when (and begin end)
-      (string-trim (buffer-substring-no-properties begin end)))))
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-orgcbf329b" class="outline-2">
-<h2 id="orgcbf329b"><span class="section-number-2">7.</span> Context Building</h2>
-<div class="outline-text-2" id="text-7">
-<p>
-These functions build the conversation context by parsing the org buffer.
-</p>
-</div>
-<div id="outline-container-org92cde5a" class="outline-3">
-<h3 id="org92cde5a"><span class="section-number-3">7.1.</span> Element to Text Conversion</h3>
-<div class="outline-text-3" id="text-7-1">
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">(defun org-dialog-eng--element-to-text (element)
-  "Convert an org ELEMENT to text for context building."
-  (let ((type (org-element-type element)))
-    (cond
-     ;; Source code blocks - format as markdown
-     ((eq type 'src-block)
-      (let* ((lang (org-element-property :language element))
-             (value (org-element-property :value element)))
-        (format "```%s\n%s```" (or lang "") (string-trim value))))
-
-     ;; PROMPT blocks - include content
-     ((org-dialog-eng--element-is-prompt-block-p element)
-      (org-dialog-eng--extract-block-content element))
-
-     ;; ASSISTANT blocks - include content
-     ((org-dialog-eng--element-is-response-block-p element)
-      (org-dialog-eng--extract-block-content element))
-
-     ;; Other elements - extract text
-     (t
-      (let* ((begin (org-element-property :begin element))
-             (end (org-element-property :end element)))
-        (when (and begin end)
-          (string-trim
-           (buffer-substring-no-properties begin end))))))))
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-orgbb84679" class="outline-3">
-<h3 id="orgbb84679"><span class="section-number-3">7.2.</span> Context Builder</h3>
-<div class="outline-text-3" id="text-7-2">
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">;;; Context Building
-
-(defun org-dialog-eng--build-context (end-pos)
-  "Build context from buffer start to END-POS.
-Returns a string containing all relevant content before the prompt."
-  (save-excursion
-    (let* ((parse-tree (org-element-parse-buffer))
-           (context-parts '()))
-
-      ;; Collect all elements up to end-pos
-      (org-element-map parse-tree '(headline paragraph src-block special-block plain-list)
-        (lambda (element)
-          (let ((elem-begin (org-element-property :begin element)))
-            ;; Only process elements before END-POS
-            (when (and elem-begin (&lt; elem-begin end-pos))
-              (when-let ((text (org-dialog-eng--element-to-text element)))
-                (unless (string-empty-p text)
-                  (push text context-parts)))))))
-
-      ;; Join all parts with double newlines
-      (if context-parts
-          (string-join (nreverse context-parts) "\n\n")
-        ""))))
-</pre>
-</div>
-</div>
-</div>
-</div>
-<div id="outline-container-orge3c5930" class="outline-2">
-<h2 id="orge3c5930"><span class="section-number-2">8.</span> Response Insertion</h2>
-<div class="outline-text-2" id="text-8">
-</div>
-<div id="outline-container-org109cd1f" class="outline-3">
-<h3 id="org109cd1f"><span class="section-number-3">8.1.</span> ANSI Code Stripping</h3>
-<div class="outline-text-3" id="text-8-1">
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">;;; Response Insertion
-
-(defun org-dialog-eng--strip-ansi-codes (text)
-  "Remove ANSI escape codes and control characters from TEXT.
-Preserves newlines and tabs."
-  ;; Remove CSI sequences (ESC[...letter)
-  (setq text (replace-regexp-in-string "\033\\[[0-9;?]*[a-zA-Z]" "" text))
-  ;; Remove other escape sequences
-  (setq text (replace-regexp-in-string "\033[^[]" "" text))
-  ;; Clean up control characters but preserve newline (\n = \x0A) and tab (\t = \x09)
-  (setq text (replace-regexp-in-string "[\x00-\x08\x0B-\x1F\x7F]" "" text))
-  text)
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-org7138b09" class="outline-3">
-<h3 id="org7138b09"><span class="section-number-3">8.2.</span> Helper Functions for Blank Lines</h3>
-<div class="outline-text-3" id="text-8-2">
-<p>
-These functions intelligently ensure blank lines exist without adding unnecessary newlines.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">(defun org-dialog-eng--ensure-blank-line-before ()
-  "Ensure there is a blank line before point.
-Only inserts newlines if needed to create a blank line."
-  (let ((chars-before (buffer-substring-no-properties
-                       (max (point-min) (- (point) 2))
-                       (point))))
-    (cond
-     ;; Already have blank line (two newlines before point)
-     ((string-match-p "\n\n\\'" chars-before) nil)
-     ;; Have one newline, need one more
-     ((string-match-p "\n\\'" chars-before) (insert "\n"))
-     ;; At start of buffer or no newlines, need two
-     (t (insert "\n\n")))))
-
-(defun org-dialog-eng--ensure-blank-line-after ()
-  "Ensure there is a blank line after point.
-Only inserts newlines if needed to create a blank line."
-  (let ((chars-after (buffer-substring-no-properties
-                      (point)
-                      (min (point-max) (+ (point) 2)))))
-    (cond
-     ;; Already have blank line (two newlines after point)
-     ((string-match-p "\\`\n\n" chars-after) nil)
-     ;; Have one newline, need one more
-     ((string-match-p "\\`\n" chars-after) (insert "\n"))
-     ;; At end of buffer or no newlines, need two
-     ((= (point) (point-max)) (insert "\n"))
-     ;; Content immediately after, need two newlines
-     (t (insert "\n\n")))))
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-org2cd5a9e" class="outline-3">
-<h3 id="org2cd5a9e"><span class="section-number-3">8.3.</span> Response Block Insertion</h3>
-<div class="outline-text-3" id="text-8-3">
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">(defun org-dialog-eng--insert-response (response marker)
-  "Insert RESPONSE as an ASSISTANT block at MARKER position."
-  (when (and response (marker-buffer marker))
-    (with-current-buffer (marker-buffer marker)
-      (save-excursion
-        (goto-char marker)
-        ;; Find the containing PROMPT block
-        (let* ((element (org-element-at-point))
-               (block (org-element-lineage element '(special-block) t)))
-          (when block
-            ;; Go to the end of the PROMPT block
-            (goto-char (org-element-property :end block))
-            ;; Ensure blank line before assistant block
-            (org-dialog-eng--ensure-blank-line-before)
-            (insert "#+begin_assistant\n")
-            (insert (string-trim (org-dialog-eng--strip-ansi-codes response)))
-            (insert "\n#+end_assistant\n")
-            ;; Ensure blank line after assistant block
-            (org-dialog-eng--ensure-blank-line-after)
-            (org-dialog-eng--message "Response inserted successfully")))))))
-</pre>
-</div>
-</div>
-</div>
-</div>
-<div id="outline-container-orgada0d17" class="outline-2">
-<h2 id="orgada0d17"><span class="section-number-2">9.</span> Process Execution</h2>
-<div class="outline-text-2" id="text-9">
-</div>
-<div id="outline-container-orgaa04107" class="outline-3">
-<h3 id="orgaa04107"><span class="section-number-3">9.1.</span> Process Filter</h3>
-<div class="outline-text-3" id="text-9-1">
-<p>
-The process filter receives output from Claude as it arrives and accumulates
-it in the process buffer.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">  ;;; Process Execution
-
-  (defun org-dialog-eng--process-filter (process output)
-    "Process filter for Claude CLI PROCESS OUTPUT.
-Accumulates output in process buffer."
-    (when (buffer-live-p (process-buffer process))
-      (with-current-buffer (process-buffer process)
-        (goto-char (point-max))
-        (insert output))))
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-orgf59fa98" class="outline-3">
-<h3 id="orgf59fa98"><span class="section-number-3">9.2.</span> Process Sentinel</h3>
-<div class="outline-text-3" id="text-9-2">
-<p>
-The sentinel handles process completion:
-</p>
-<ol class="org-ol">
-<li>On success: inserts the response into the org buffer</li>
-<li>On error: shows error message</li>
-</ol>
-
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">(defun org-dialog-eng--process-sentinel (process event)
-  "Process sentinel for Claude CLI PROCESS.
-EVENT describes what happened to the process."
-  (let ((status (process-status process))
-        (marker (process-get process 'org-dialog-eng-marker)))
-    (cond
-     ((eq status 'exit)
-      (let ((exit-code (process-exit-status process)))
-        (if (= exit-code 0)
-            ;; Success - insert the response
-            (when (buffer-live-p (process-buffer process))
-              (let ((response (with-current-buffer (process-buffer process)
-                               (buffer-string))))
-                (org-dialog-eng--insert-response response marker)
-                (kill-buffer (process-buffer process))))
-          ;; Error - show message
-          (org-dialog-eng--error "Claude CLI exited with code %d: %s"
-                               exit-code
-                               (if (buffer-live-p (process-buffer process))
-                                   (with-current-buffer (process-buffer process)
-                                     (buffer-string))
-                                 "")))))
-
-     ((eq status 'signal)
-      (org-dialog-eng--error "Claude CLI process killed: %s" event))
-
-     (t
-      (org-dialog-eng--message "Claude CLI process status: %s" event)))))
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-org9ecab12" class="outline-3">
-<h3 id="org9ecab12"><span class="section-number-3">9.3.</span> Execute Claude</h3>
-<div class="outline-text-3" id="text-9-3">
-<p>
-This function starts the Claude process:
-</p>
-<ol class="org-ol">
-<li>Starts the async process with the <code>-p</code> flag to pass the prompt</li>
-<li>Wires up the filter and sentinel</li>
-<li>Waits for Claude to respond</li>
-</ol>
-
-<p>
-The process runs asynchronously, so Emacs remains responsive while Claude generates
-the response.
-</p>
-
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">(defun org-dialog-eng--execute-claude (prompt-content marker)
-  "Execute Claude with PROMPT-CONTENT asynchronously.
-Insert response at MARKER when complete."
-  (let* ((executable (or org-dialog-eng-executable-path org-dialog-eng-command))
-         (process-buffer (generate-new-buffer " *org-dialog-eng-output*"))
-         (process-name "org-dialog-eng"))
-
-    ;; Start the async process: claude -p "prompt content"
-    (org-dialog-eng--message "Sending prompt to Claude...")
-    (condition-case err
-        (let ((proc (start-process
-                     process-name
-                     process-buffer
-                     executable
-                     "-p"
-                     prompt-content)))
-          ;; Store the marker in process properties
-          (process-put proc 'org-dialog-eng-marker marker)
-          (set-process-filter proc #'org-dialog-eng--process-filter)
-          (set-process-sentinel proc #'org-dialog-eng--process-sentinel)
-          (org-dialog-eng--message "Waiting for Claude's response..."))
-      (error
-       (org-dialog-eng--error "Failed to start Claude CLI: %s" (error-message-string err))
-       (kill-buffer process-buffer)))))
-</pre>
-</div>
-</div>
-</div>
-</div>
-<div id="outline-container-orgc4494aa" class="outline-2">
-<h2 id="orgc4494aa"><span class="section-number-2">10.</span> Block Execution</h2>
-<div class="outline-text-2" id="text-10">
-<p>
-This is the main entry point - called when user presses C-c C-c in a PROMPT block.
-</p>
-
-<p>
-It:
-</p>
-<ol class="org-ol">
-<li>Finds the containing PROMPT block</li>
-<li>Builds context from everything before the prompt</li>
-<li>Formats the full message as: <code>context + separator + prompt</code></li>
-<li>Sends it to Claude</li>
-</ol>
-
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">;;; Block Execution
-
-(defun org-dialog-eng--execute-block ()
-  "Execute the PROMPT block at point.
-This function is called by org-mode's C-c C-c mechanism.
-Returns t if a PROMPT block was executed, nil otherwise."
-  (interactive)
-  (let* ((element (org-element-at-point))
-         ;; Check if we're IN a block by looking at parent elements
-         ;; org-element-lineage walks up the tree to find containing special-blocks
-         (block (org-element-lineage element '(special-block) t)))
-
-    ;; Check if we found a PROMPT block in the lineage
-    (when (and block
-               (org-dialog-eng--element-is-prompt-block-p block))
-
-      ;; Extract the prompt content
-      (let* ((prompt-content (org-dialog-eng--extract-block-content block))
-             (block-begin (org-element-property :begin block))
-             ;; Build context from start of buffer up to (but not including) this PROMPT block
-             (context (org-dialog-eng--build-context block-begin))
-             ;; Format the full message with context + emphasized prompt
-             (full-message (if (string-empty-p context)
-                               ;; No context, just send the prompt
-                               prompt-content
-                             ;; Has context, format with separator
-                             (format "%s\n\n---\nPROMPT:\n%s" context prompt-content))))
-
-        (if (or (null prompt-content) (string-empty-p prompt-content))
-            (org-dialog-eng--error "PROMPT block is empty")
-
-          ;; Execute Claude with the full message (context + prompt)
-          (org-dialog-eng--execute-claude full-message (point-marker))
-          t)))))  ; Return t to indicate we handled the C-c C-c
-</pre>
-</div>
-</div>
-</div>
-<div id="outline-container-org3fa304a" class="outline-2">
-<h2 id="org3fa304a"><span class="section-number-2">11.</span> Minor Mode Definition</h2>
-<div class="outline-text-2" id="text-11">
-<div class="org-src-container">
-<pre class="src src-emacs-lisp">  ;;; Minor Mode Definition
-
-  ;;;###autoload
-  (define-minor-mode org-dialog-eng-mode
-    "Minor mode for Claude integration in Org mode.
-
-This mode adds support for PROMPT blocks that send questions to Claude.
-
-Key bindings:
-  \\[org-ctrl-c-ctrl-c] - Execute prompt block at point (sends to Claude)
-
-Usage:
-  1. Create a #+BEGIN_PROMPT block with your question
-  2. Position cursor inside the block
-  3. Press C-c C-c
-  4. Wait for Claude to respond
-  5. Claude's response appears in a #+begin_assistant block below"
-    :lighter " AI"
-    :group 'org-dialog-eng
-    (if org-dialog-eng-mode
-        (org-dialog-eng--setup)
-      (org-dialog-eng--teardown)))
-
-  (defun org-dialog-eng--setup ()
-    "Set up org-dialog-eng-mode in the current buffer."
-    ;; Add our ctrl-c-ctrl-c hook
-    (add-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-block nil t))
-
-  (defun org-dialog-eng--teardown ()
-    "Clean up org-dialog-eng-mode in the current buffer."
-    ;; Remove our ctrl-c-ctrl-c hook
-    (remove-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-block t))
-
-  (provide 'org-dialog-eng)
-
-  ;;; org-dialog-eng.el ends here
-</pre>
-</div>
-</div>
-</div>
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Pablo Munoz</p>
-<p class="date">Created: 2025-10-23 Thu 23:16</p>
+<p class="date">Created: 2025-11-02 Sun 21:13</p>
 <p class="validation"><a href="https://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
 </body>

@@ -1,32 +1,23 @@
 (require 'ert)
-(require 'org-dialog-eng)
+(require 'org-dialog-eng-mode)
 
-(ert-deftest org-dialog-eng--test-block-detection ()
-  "Test that PROMPT blocks are detected correctly."
+(ert-deftest org-dialog-eng-test-placeholder-replacement ()
+  "Test that placeholder ASSISTANT block is replaced with LLM response."
   (with-temp-buffer
     (org-mode)
-    (insert "#+begin_prompt\nTest prompt\n#+end_prompt")
-    (goto-char (point-min))
-    (let ((element (org-element-at-point)))
-      (should (org-dialog-eng--element-is-prompt-block-p element)))))
+    (org-dialog-eng-mode 1)
 
-(ert-deftest org-dialog-eng--test-context-included-with-prompt ()
-  "Test that the contents of the file up to the PROMPT block being executed
-are fed into the AI."
-  (with-temp-buffer
-    (org-mode)
-    (insert "* A test header\nSome test content before prompt\n#+begin_prompt\nTest prompt\n#+end_prompt")
-    ;; Position cursor in the PROMPT block
+    ;; Insert a PROMPT block
+    (insert "#+begin_prompt\nTest response\n+#end_prompt\n")
     (goto-char (point-min))
-    (search-forward "#+begin_prompt")
     (forward-line 1)
 
-    ;; Get the element and its position
-    (let* ((element (org-element-at-point))
-	   (block (org-element-lineage element '(special-block) t))
-	   (block-begin (org-element-property :begin block))
-	   (context (org-dialog-eng--build-context block-begin)))
+    ;; Execute the prompt block
+    (org-dialog-eng--execute-prompt-block)
 
-      ;; Verify the context contains expected content
-      (should (string-match-p "A test header" context))
-      (should (string-match-p "Some test content before prompt" context)))))
+    ;; Verify results
+    (goto-char (point-min))
+    (should (search-forward "#+begin_assistant" nil t))
+    (should-not (search-forward "LLM is working..." nil t))
+    (goto-char (point-min))
+    (should (search-forward "Test response from LLM" nil t))))
