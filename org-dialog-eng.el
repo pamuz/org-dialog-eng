@@ -103,7 +103,8 @@ Leaves a blank line between the prompt block and the new assistant block."
   "Accumulate output from Claude process PROC."
   (setq org-dialog-eng--claude-output
 	(concat org-dialog-eng--claude-output string))
-  (message org-dialog-eng--claude-output))
+  (message "%s" org-dialog-eng--claude-output))
+
 
 (defun org-dialog-eng--claude-sentinel (proc event)
   "Handle Claude process PROC completion EVENT."
@@ -131,11 +132,8 @@ Leaves a blank line between the prompt block and the new assistant block."
 	  ;; Stop the progress animation
 	  (org-dialog-eng--stop-progress-indicator)
 	  ;; Insert content
-	  (let ((start (point)))
 	  (insert new-content
-		  (if (string-suffix-p "\n" new-content) "" "\n"))
-	  ;; Fill the inserted region
-	  (fill-region start (point))))))))
+		  (if (string-suffix-p "\n" new-content) "" "\n")))))))
 
 (defun org-dialog-eng--get-document-context ()
   "Extract all content from buffer start up to the current prompt block.
@@ -172,46 +170,51 @@ Returns a string with <instructions>...<instructions> and <context>...</context>
 	  (or context "")
 	  (if (or (not context) (string-suffix-p "\n" context)) "" "\n")
 	  "</context>\n"))
-(defun org-dialog-eng--replace-assistant-content (new-content)
-  "Replace the content of the most recently inserted assistant block."
-  (when (and org-dialog-eng--progress-marker
-	     (marker-buffer org-dialog-eng--progress-marker))
-    (save-excursion
-      (goto-char org-dialog-eng--progress-marker)
-      (let ((block-end (save-excursion
-			 (re-search-forward "^#\\+end_assistant" nil t)
-			 (line-beginning-position))))
-	(when block-end
-	  (delete-region org-dialog-eng--progress-marker block-end)
-	  (goto-char org-dialog-eng--progress-marker)
-	  ;; Stop the progress animation
-	  (org-dialog-eng--stop-progress-indicator)
-	  ;; Insert content
-	  (let ((start (point)))
-	    (insert new-content
-		    (if (string-suffix-p "\n" new-content) "" "\n"))
-	    ;; Fill the inserted region
-	    (fill-region start (point))))))))
-(defun org-dialog-eng--replace-assistant-content (new-content)
-  "Replace the content of the most recently inserted assistant block."
-  (when (and org-dialog-eng--progress-marker
-	     (marker-buffer org-dialog-eng--progress-marker))
-    (save-excursion
-      (goto-char org-dialog-eng--progress-marker)
-      (let ((block-end (save-excursion
-			 (re-search-forward "^#\\+end_assistant" nil t)
-			 (line-beginning-position))))
-	(when block-end
-	  (delete-region org-dialog-eng--progress-marker block-end)
-	  (goto-char org-dialog-eng--progress-marker)
-	  ;; Stop the progress animation
-	  (org-dialog-eng--stop-progress-indicator)
-	  ;; Insert content
-	  (let ((start (point)))
-	    (insert new-content
-		    (if (string-suffix-p "\n" new-content) "" "\n"))
-	    ;; Fill the inserted region
-	    (fill-region start (point))))))))
+(defface org-dialog-eng-prompt-face
+  '((t :inherit org-block :background "#fff3cd"))
+  "Face for prompt blocks")
+
+(defface org-dialog-eng-assistant-face
+  '((t :inherit org-block :background "#d1ecf1"))
+  "Face for assistant blocks")
+
+(defun org-dialog-eng--fontify-blocks (limit)
+  "Fontify PROMPT and assistant blocks up to LIMIT."
+  (while (re-search-forward "^#\\+begin_\\(prompt\\|assistant\\)" limit t)
+    (let* ((block-type (match-string 1))
+	   (face (if (string= block-type "prompt")
+		     'org-dialog-eng-prompt-face
+		   'org-dialog-eng-assistant-face))
+	   (begin (match-beginning 0))
+	   (end (save-excursion
+		  (when (re-search-forward (format "^#\\+end_%s" block-type) limit t)
+		    (match-end 0)))))
+      (when end
+	(add-text-properties begin end (list 'face face))))))
+(defface org-dialog-eng-prompt-face
+  '((t :inherit org-block :background "#fff3cd"))
+  "Face for prompt blocks")
+
+(defface org-dialog-eng-assistant-face
+  '((t :inherit org-block :background "#d1ecf1"))
+  "Face for assistant blocks")
+
+(defun org-dialog-eng--fontify-blocks (limit)
+  "Fontify prompt and assistant blocks up to LIMIT."
+  (while (re-search-forward "^#\\+begin_\\(prompt\\|assistant\\)" limit t)
+    (let* ((block-type (match-string 1))
+           (face (if (string= block-type "prompt")
+                     'org-dialog-eng-prompt-face
+                   'org-dialog-eng-assistant-face))
+           (begin (match-beginning 0))
+           (end (save-excursion
+                  (when (re-search-forward (format "^#\\+end_%s" block-type) limit t)
+                    (match-end 0)))))
+      (when end
+        (add-text-properties begin end (list 'face face))))))
+
+(font-lock-add-keywords 'org-mode
+                        '((org-dialog-eng--fontify-blocks)))
 
 (defun org-dialog-eng--execute-prompt-block ()
   "Execute the current prompt block using Claude.
@@ -227,6 +230,17 @@ Returns t if executed successfully, nil otherwise."
     ;; Launch the claude process
     (org-dialog-eng--start-claude-process prompt)
     t)) ; Return t to indicate we handled the command
+(defface org-dialog-eng-prompt-face
+  '((t :inherit org-block :background "#fff3cd"))
+  "Face for prompt blocks.")
+
+(defface org-dialog-eng-assistant-face
+  '((t :inherit org-block :background "#d1ecf1"))
+  "Face for assistant blocks.")
+
+(font-lock-add-keywords 'org-mode
+  '(("^#\\+begin_prompt" 0 'org-dialog-eng-prompt-face prepend)
+    ("^#\\+begin_assistant" 0 'org-dialog-eng-assistant-face prepend)))
 
 
 

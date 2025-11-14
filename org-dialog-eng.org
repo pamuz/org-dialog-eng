@@ -3,6 +3,53 @@
 #+DATE: 2025
 #+OPTIONS: toc:3
 
+* Summary
+org-dialog-eng is a minor mode that extends org-mode with the
+capability to carry out a dialogue with an AI. The mode is heavily
+inspired by the `Solve It With Code` project (see
+https://solve.it.com).
+
+The mode enables two new type of blocks in org mode:
+
+- prompt blocks :: Where the user types some message to the AI.
+- assistant blocks :: That contain the responses from the AI to a
+  given prompt block.
+
+#+begin_example
+#+begin_prompt
+Write me simplest implementation of fibonacci in python and explain
+why it's the simplest.
+#+end_prompt
+
+#+begin_assistant
+Here's the simplest implementation:
+
+#+begin_src python
+def fib(n): if n <= 1: return n return fib(n - 1) + fib(n - 2)
+#+end_src
+
+This is the simplest implementation because:
+
+1. **Directly mirrors the mathematical definition** - Fibonacci is
+   recursively defined as F(n) = F(n-1) + F(n-2), and this code is a
+   one-to-one translation of that definition.
+
+2. **Minimal code** - Just 4 lines with the base case and recursive
+   case, nothing more.
+
+3. **No data structures** - Unlike iterative solutions that need lists
+   or variables to track previous values, this uses only the call
+   stack.
+
+4. **Immediately readable** - Anyone familiar with Fibonacci can
+   understand this at a glance without learning any algorithm details.
+
+The trade-off is performance: this has O(2^n) time complexity due to
+redundant calculations. But for simplicity of implementation and
+understanding, it can't be beaten.
+#+end_assistant
+#+end_example
+
 * Artifacts
 #+begin_src elisp :noweb yes :tangle org-dialog-eng.el
   <<header>>
@@ -131,7 +178,8 @@
     "Accumulate output from Claude process PROC."
     (setq org-dialog-eng--claude-output
   	(concat org-dialog-eng--claude-output string))
-    (message org-dialog-eng--claude-output))
+    (message "%s" org-dialog-eng--claude-output))
+  
 
   (defun org-dialog-eng--claude-sentinel (proc event)
     "Handle Claude process PROC completion EVENT."
@@ -159,11 +207,8 @@
   	  ;; Stop the progress animation
   	  (org-dialog-eng--stop-progress-indicator)
   	  ;; Insert content
-  	  (let ((start (point)))
   	  (insert new-content
-  		  (if (string-suffix-p "\n" new-content) "" "\n"))
-  	  ;; Fill the inserted region
-  	  (fill-region start (point))))))))
+  		  (if (string-suffix-p "\n" new-content) "" "\n")))))))
 
   (defun org-dialog-eng--get-document-context ()
     "Extract all content from buffer start up to the current prompt block.
@@ -230,6 +275,35 @@
       (remove-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-prompt-block t)))
 
   (provide 'org-dialog-eng)
+#+end_src
+
+* UX
+** Faces
+Custom face are used to make the prompt and assistant blocks visually
+distinct from surrounding content.
+
+#+begin_src elisp :noweb-ref utility
+  (defface org-dialog-eng-prompt-face
+    '((t :inherit org-block :background "#2a1a4a"))
+    "Face for prompt blocks")
+
+  (defface org-dialog-eng-assistant-face
+    '((t :inherit org-block :background "#1a2a3a"))
+    "Face for assistant blocks")
+
+  (defun org-dialog-eng--fontify-blocks (limit)
+    "Fontify PROMPT and assistant blocks up to LIMIT."
+    (while (re-search-forward "^#\\+begin_\\(prompt\\|assistant\\)" limit t)
+      (let* ((block-type (match-string 1))
+  	   (face (if (string= block-type "prompt")
+  		     'org-dialog-eng-prompt-face
+  		   'org-dialog-eng-assistant-face))
+  	   (begin (match-beginning 0))
+  	   (end (save-excursion
+  		  (when (re-search-forward (format "^#\\+end_%s" block-type) limit t)
+  		    (match-end 0)))))
+        (when end
+  	(add-text-properties begin end (list 'face face))))))
 #+end_src
 
 * Current
