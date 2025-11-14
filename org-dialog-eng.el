@@ -1,305 +1,240 @@
-;;; org-dialog-eng.el --- LLM integration for Org mode -*- lexical-binding: t; -*-
-
-;; Copyright (C) 2025 Pablo Munoz
-
-;; Author: Pablo Munoz
-;; Version: 0.3.0
-;; Package-Requires: ((emacs "27.1") (org "9.0"))
-;; Keywords: org, ai, llm, literate-programming
-;; URL: https://github.com/pmunoz/org-dialog-eng
-
-;;; Commentary:
-
-;; This package enables interactive dialogues with Large Language Models
-;; directly within Org mode documents.  It extends the literate programming
-;; paradigm to include AI-assisted document development.
-;;
-;; Usage:
-;;   1. Enable org-dialog-eng-mode in an Org buffer
-;;   2. Create a #+begin_prompt block with your question
-;;   3. Position cursor inside the block and press C-c C-c
-;;   4. An ASSISTANT block with the response appears below
-;;
-;; The mode sends all document content before the prompt as context,
-;; enabling context-aware conversations that reference your notes and code.
-;;
-;; Configuration:
-;;   (require 'org-dialog-eng)
-;;   (add-hook 'org-mode-hook #'org-dialog-eng-mode)
-;;   (setq org-dialog-eng-executable "claude")  ; or your preferred LLM CLI
-
-;;; Code:
+;;-*- lexical-binding: t; -*- declaration
 
 (require 'org)
 (require 'org-element)
 
-(defgroup org-dialog-eng nil
-  "LLM integration for Org mode documents."
-  :group 'org
-  :prefix "org-dialog-eng-")
-
-(defface org-dialog-eng-prompt-block
-  '((t (:background "#2d3a55" :extend t)))
-  "Face for PROMPT block content.
-The background provides visual distinction for user-authored prompts."
-  :group 'org-dialog-eng)
-
-(defface org-dialog-eng-assistant-block
-  '((t (:background "#3d2f5b" :extend t)))
-  "Face for ASSISTANT block content.
-A slightly different hue distinguishes LLM responses from user prompts."
-  :group 'org-dialog-eng)
-
-(defcustom org-dialog-eng-executable "claude"
-  "Executable for LLM interaction.
-This should be a command-line tool that accepts a prompt via the -p flag
-and outputs the response to stdout. Examples: \"claude\", \"copilot\",
-or a custom wrapper script."
-  :type 'string
-  :group 'org-dialog-eng)
-
-(defun org-dialog-eng--element-is-prompt-block-p (element)
-  "Return non-nil if ELEMENT is a PROMPT block.
-ELEMENT should be an org-element as returned by `org-element-at-point'."
-  (and (eq (org-element-type element) 'special-block)
-       (string-equal (upcase (org-element-property :type element)) "PROMPT")))
-(defun org-dialog-eng--element-is-assistant-block-p (element)
-  "Return non-nil if ELEMENT is an ASSISTANT block."
-  (and (eq (org-element-type element) 'special-block)
-       (string-equal (upcase (org-element-property :type element)) "ASSISTANT")))
-
-(defun org-dialog-eng--extract-block-content (element)
-  "Extract the content from special block ELEMENT.
-Returns the text between #+begin_XXX and #+end_XXX as a string,
-with leading and trailing whitespace trimmed."
-  (let* ((begin (org-element-property :contents-begin element))
-         (end (org-element-property :contents-end element)))
-    (when (and begin end)
-      (string-trim (buffer-substring-no-properties begin end)))))
-(defun org-dialog-eng--find-next-assistant-block (prompt-element)
-  "Find the ASSISTANT block immediately following PROMPT-ELEMENT.
-Returns the element if found, nil otherwise.
-Skips whitespace between the blocks."
-  (save-excursion
-    (goto-char (org-element-property :end prompt-element))
-    ;; Skip any whitespace or blank lines
-    (skip-chars-forward " \t\n")
-    ;; Check if we're now at an ASSISTANT block
-    (let ((next-elem (org-element-at-point)))
-      (when (org-dialog-eng--element-is-assistant-block-p next-elem)
-        next-elem))))
-
-(defun org-dialog-eng--get-preceding-context ()
-  "Extract all buffer content before the current PROMPT block.
-Returns a string containing everything from the buffer start
-up to (but not including) the current PROMPT block."
-  (let* ((element (org-element-at-point))
-         (block (org-element-lineage element '(special-block) t))
-         (prompt-begin (org-element-property :begin block)))
-    (when prompt-begin
-      (string-trim
-       (buffer-substring-no-properties (point-min) prompt-begin)))))
-(defun org-dialog-eng--format-prompt (prompt-content context)
-  "Format PROMPT-CONTENT and CONTEXT into a structured prompt.
-Returns a string suitable for sending to the LLM executable."
-  (format "
-<instructions>
-You are a helpful assistant helping write an Org mode document in Emacs,
-potentially including code (literate programming style). I will provide
-a prompt, and you should respond concisely.
-
-If the prompt requests code, provide it in Org syntax (#+begin_src blocks),
-not markdown. If it requests modifications, show only the changes needed.
-
-I will also provide context: the content of the Org file we have written
-so far, for better-informed responses.
-
-When you see #+begin_prompt ... #+end_prompt delimiters, the content
-inside is a prompt I gave you previously.
-
-When you see #+begin_assistant ... #+end_assistant delimiters, the
-content inside is a response you gave me previously.
-
-CRITICAL: Since we are editing an Org file together, use Org syntax,
-NOT markdown, unless explicitly requested otherwise.
-</instructions>
-
-<prompt>
-%s
-</prompt>
-
-<context>
-%s
-</context>
-" prompt-content context))
-
-(defun org-dialog-eng--execute-prompt-block ()
-  "Execute the PROMPT block at point.
-Spawns an async LLM subprocess and inserts the response in an ASSISTANT block.
-The buffer becomes read-only during execution to prevent concurrent edits."
-  (interactive)
-  (let* ((element (org-element-at-point))
-         (prompt-content (org-dialog-eng--extract-block-content element))
-         (preceding-context (org-dialog-eng--get-preceding-context))
-         (formatted-prompt (org-dialog-eng--format-prompt prompt-content preceding-context)))
-
-    (unless prompt-content
-      (error "No prompt content found. Ensure cursor is inside a PROMPT block"))
-
-    (let* ((block-end (org-element-property :end element))
-           (output-buffer (generate-new-buffer " *llm-output*"))
-           (source-buffer (current-buffer)))
-
-      ;; Immediately insert a placeholder ASSISTANT block for feedback
-      (save-excursion
-        (goto-char block-end)
-        (unless (looking-at-p "^[ \t]*$")
-          (end-of-line)
-          (insert "\n"))
-        (insert "\n#+begin_assistant\nLLM is working...\n#+end_assistant\n"))
-
-      ;; Make buffer read-only to prevent concurrent edits
-      (setq buffer-read-only t)
-      (message "Querying LLM...")
-
-      ;; Spawn the async process
-      (make-process
-       :name "org-dialog-eng-process"
-       :buffer output-buffer
-       :command (list org-dialog-eng-executable "-p" formatted-prompt)
-       :sentinel
-       (lambda (process event)
-         (when (string-match-p "finished" event)
-           (if (buffer-live-p source-buffer)
-               (with-current-buffer source-buffer
-                 (let ((response (with-current-buffer output-buffer
-                                   (buffer-substring-no-properties
-                                    (point-min) (point-max)))))
-                   (save-excursion
-                     ;; Make buffer temporarily writable
-                     (setq buffer-read-only nil)
-
-                     ;; Find and remove any existing ASSISTANT block
-                     (let ((next-assistant
-                            (org-dialog-eng--find-next-assistant-block element)))
-                       (when next-assistant
-                         (delete-region
-                          (org-element-property :begin next-assistant)
-                          (org-element-property :end next-assistant))))
-
-                     ;; Insert the new ASSISTANT block with actual response
-                     (goto-char block-end)
-                     (unless (looking-at-p "^[ \t]*$")
-                       (end-of-line)
-                       (insert "\n"))
-                     (insert "\n#+begin_assistant\n")
-                     (insert (string-trim response))
-                     (insert "\n#+end_assistant\n"))
-
-                   ;; Restore read-only status
-                   (setq buffer-read-only nil)
-                   (message "LLM response inserted")))
-             (message "Source buffer no longer exists"))
-
-           ;; Clean up output buffer
-           (when (buffer-live-p output-buffer)
-             (kill-buffer output-buffer))))
-
-       :stderr (get-buffer-create "*org-dialog-eng-errors*")))))
-(defun org-dialog-eng--execute-block ()
-  "Hook function for `org-ctrl-c-ctrl-c-hook'.
-Executes PROMPT blocks when point is inside one.
-Returns non-nil if the block was executed, nil otherwise."
+(defun org-dialog-eng--current-block-info ()
+  "Get information about the current special block (prompt/assistant).
+Returns a plist with :type, :begin, :end, and :end-pos, or nil if not in a block.
+Uses org-element-lineage to properly handle nested elements."
   (let* ((element (org-element-at-point))
          (block (org-element-lineage element '(special-block) t)))
-    (when (and block (org-dialog-eng--element-is-prompt-block-p block))
-      (org-dialog-eng--execute-prompt-block)
-      t)))  ; Return t to stop hook processing
+    (when block
+      (let ((block-type (org-element-property :type block)))
+        (when (member block-type '("prompt" "assistant"))
+          (list :type (downcase block-type)
+                :begin (org-element-property :contents-begin block)
+                :end (org-element-property :contents-end block)
+                :end-pos (org-element-property :end block)))))))
 
-(defun org-dialog-eng--fontify-block (limit)
-  "Fontify PROMPT and ASSISTANT blocks up to LIMIT.
-This is a font-lock matcher function that properly handles multiline blocks."
-  (let ((case-fold-search t))
-    (when (re-search-forward
-           "^[ \t]*#\\+begin_\\(prompt\\|assistant\\)\\>"
-           limit t)
-      (let* ((block-type (match-string 1))
-             (face (if (string-equal (downcase block-type) "prompt")
-                       'org-dialog-eng-prompt-block
-                     'org-dialog-eng-assistant-block))
-             (beg (match-beginning 0))
-             (end-re (format "^[ \t]*#\\+end_%s\\>" block-type)))
-        (when (re-search-forward end-re limit t)
-          (let ((end (match-end 0)))
-            (put-text-property beg end 'face face)
-            (put-text-property beg end 'font-lock-multiline t)
-            (goto-char end)
-            t))))))
+(defun org-dialog-eng--get-prompt-block-content ()
+  "Get the content of current prompt block."
+  (save-excursion
+    (when-let* ((info (org-dialog-eng--current-block-info))
+		  ((string= (plist-get info :type) "prompt"))
+		  (begin (plist-get info :begin))
+		  (end (plist-get info :end)))
+	(buffer-substring-no-properties begin end))))
+(defun org-dialog-eng--insert-assistant-block (content)
+  "Insert an assitant block with CONTENT after the current prompt block.
+Leaves a blank line between the prompt block and the new assistant block."
+  (save-excursion
+    (when-let* ((info (org-dialog-eng--current-block-info))
+		((string= (plist-get info :type) "prompt"))
+		(end-pos (plist-get info :end-pos)))
+      (goto-char end-pos)
+      (insert "#+begin_assistant\n"
+	      content
+	      (if (string-suffix-p "\n" content) "" "\n")
+	      "#+end_assistant\n\n")
 
-(defun org-dialog-eng--setup-font-lock ()
-  "Add font-lock keywords for PROMPT and ASSISTANT blocks."
-  ;; Use a function-based matcher for reliable multiline matching
-  (font-lock-add-keywords nil
-    '((org-dialog-eng--fontify-block))
-    'append)
-  ;; Enable multiline font-lock
-  (setq-local font-lock-multiline t))
+      ;; If inserting "Thinking.", set up animation
+      (when (string= content "Thinking.")
+	(setq org-dialog-eng--progress-marker
+	      (copy-marker (- (point)
+			      (length "#+end_assistant\n\n")
+			      (if (string-suffix-p "\n" content) 0 1)
+			      (length content))))
+	;; Animate every 0.5 seconds, stop after 4 seconds
+	(setq org-dialog-eng--progress-timer
+	      (run-with-timer 0.5 0.5 #'org-dialog-eng--animate-progress))))))
+(defvar org-dialog-eng--progress-timer nil
+  "Timer for the progress indicator animation.")
 
-(defun org-dialog-eng--teardown-font-lock ()
-  "Remove font-lock keywords for PROMPT and ASSISTANT blocks."
-  (font-lock-remove-keywords nil
-    '((org-dialog-eng--fontify-block))))
-;;;###autoload
+(defvar org-dialog-eng--progress-marker nil
+  "Marker pointing to the progress indicator content.")
+
+(defun org-dialog-eng--animate-progress ()
+  "Cycle through 'Thinking.' -> 'Thinking..' -> 'Thinking...'"
+  (when (and org-dialog-eng--progress-marker
+	     (marker-buffer org-dialog-eng--progress-marker))
+    (save-excursion
+      (goto-char org-dialog-eng--progress-marker)
+      (let* ((line-end (line-end-position))
+	     (current-text (buffer-substring-no-properties
+			    org-dialog-eng--progress-marker
+			    line-end)))
+	(cond
+	 ((string= current-text "Thinking.")
+	  (delete-region org-dialog-eng--progress-marker line-end)
+	  (insert "Thinking.."))
+	 ((string= current-text "Thinking..")
+	    (delete-region org-dialog-eng--progress-marker line-end)
+	    (insert "Thinking..."))
+	 ((string= current-text "Thinking...")
+	    (delete-region org-dialog-eng--progress-marker line-end)
+	    (insert "Thinking.")))))))
+
+(defun org-dialog-eng--stop-progress-indicator ()
+  "Stop and clean up the progress indicator."
+  (when org-dialog-eng--progress-timer
+    (cancel-timer org-dialog-eng--progress-timer)
+    (setq org-dialog-eng--progress-timer nil))
+  (when org-dialog-eng--progress-marker
+    (set-marker org-dialog-eng--progress-marker nil)
+    (setq org-dialog-eng--progress-marker nil)))
+(defvar org-dialog-eng--claude-process nil
+  "Current running Claude process.")
+
+(defvar org-dialog-eng--claude-output nil
+  "Accumulated output from Claude process.")
+
+(defun org-dialog-eng--start-claude-process (prompt)
+  "Start Claude process with PROMPT as input."
+  (setq org-dialog-eng--claude-output "")
+  (setq org-dialog-eng--claude-process
+	(make-process
+	 :name "claude-dialog"
+	 :command (list "claude" "-p" prompt)
+	 :filter #'org-dialog-eng--claude-filter
+	 :sentinel #'org-dialog-eng--claude-sentinel)))
+
+(defun org-dialog-eng--claude-filter (proc string)
+  "Accumulate output from Claude process PROC."
+  (setq org-dialog-eng--claude-output
+	(concat org-dialog-eng--claude-output string))
+  (message org-dialog-eng--claude-output))
+
+(defun org-dialog-eng--claude-sentinel (proc event)
+  "Handle Claude process PROC completion EVENT."
+  (when (memq (process-status proc) '(exit signal))
+    ;; Replace "Thinking..." with actual response
+    (org-dialog-eng--replace-assistant-content
+     org-dialog-eng--claude-output)
+
+    ;; Clean up
+    (setq org-dialog-eng--claude-process nil)
+    (setq org-dialog-eng--claude-output nil)))
+
+(defun org-dialog-eng--replace-assistant-content (new-content)
+  "Replace the content of the most recently inserted assistant block."
+  (when (and org-dialog-eng--progress-marker
+	     (marker-buffer org-dialog-eng--progress-marker))
+    (save-excursion
+      (goto-char org-dialog-eng--progress-marker)
+      (let ((block-end (save-excursion
+			 (re-search-forward "^#\\+end_assistant" nil t)
+			 (line-beginning-position))))
+	(when block-end
+	  (delete-region org-dialog-eng--progress-marker block-end)
+	  (goto-char org-dialog-eng--progress-marker)
+	  ;; Stop the progress animation
+	  (org-dialog-eng--stop-progress-indicator)
+	  ;; Insert content
+	  (let ((start (point)))
+	  (insert new-content
+		  (if (string-suffix-p "\n" new-content) "" "\n"))
+	  ;; Fill the inserted region
+	  (fill-region start (point))))))))
+
+(defun org-dialog-eng--get-document-context ()
+  "Extract all content from buffer start up to the current prompt block.
+Returns the content as a string, or nil if not in a prompt block."
+  (save-excursion
+    (when-let* ((info (org-dialog-eng--current-block-info))
+		((string= (plist-get info :type) "prompt")))
+      ;; Find the beginning of the current prompt block
+      ;; (the line with #+begin_prompt)
+      (goto-char (plist-get info :begin))
+      (re-search-backward "^#\\+begin_prompt" nil t)
+      (let ((prompt-start (line-beginning-position)))
+	;; Extract from beginning of buffer to start of prompt block
+	(buffer-substring-no-properties (point-min) prompt-start)))))
+(defun org-dialog-eng--format-prompt (user-prompt context)
+  "Fromat USER-PROMPT and CONTEXT into an XML-style string.
+Returns a string with <instructions>...<instructions> and <context>...</context> blocks."
+  (concat "<instructions>\n"
+	  "You are a helpful assistant helping write an Org mode document in Emacs,\n"
+	  "potentially including code (literate programming style). I will provide\n"
+	  "a prompt, and you should respond concisely.\n\n"
+	  "If the prompt contains code, provide it in Org syntax (#+begin_src blocks),\n"
+	  "not markdown. If it request modification, only show the changes needed.\n\n"
+	  "I will also provide context: the content of the Org file we have written\n"
+	  "so far, for better informed respones.\n\n"
+	  "When you see #+begin_prompt ... #+end_prompt delimiters, the content\n"
+	  "inside is a prompt I gave you previously.\n\n"
+	  "When you see #+begin_assistant ... #+end_assistant delimiters, the\n"
+	  "content inside is a response you gave me previously.\n\n"
+	  "<prompt>\n"
+	  user-prompt
+	  "</prompt>\n\n"
+	  "<context>\n"
+	  (or context "")
+	  (if (or (not context) (string-suffix-p "\n" context)) "" "\n")
+	  "</context>\n"))
+(defun org-dialog-eng--replace-assistant-content (new-content)
+  "Replace the content of the most recently inserted assistant block."
+  (when (and org-dialog-eng--progress-marker
+	     (marker-buffer org-dialog-eng--progress-marker))
+    (save-excursion
+      (goto-char org-dialog-eng--progress-marker)
+      (let ((block-end (save-excursion
+			 (re-search-forward "^#\\+end_assistant" nil t)
+			 (line-beginning-position))))
+	(when block-end
+	  (delete-region org-dialog-eng--progress-marker block-end)
+	  (goto-char org-dialog-eng--progress-marker)
+	  ;; Stop the progress animation
+	  (org-dialog-eng--stop-progress-indicator)
+	  ;; Insert content
+	  (let ((start (point)))
+	    (insert new-content
+		    (if (string-suffix-p "\n" new-content) "" "\n"))
+	    ;; Fill the inserted region
+	    (fill-region start (point))))))))
+(defun org-dialog-eng--replace-assistant-content (new-content)
+  "Replace the content of the most recently inserted assistant block."
+  (when (and org-dialog-eng--progress-marker
+	     (marker-buffer org-dialog-eng--progress-marker))
+    (save-excursion
+      (goto-char org-dialog-eng--progress-marker)
+      (let ((block-end (save-excursion
+			 (re-search-forward "^#\\+end_assistant" nil t)
+			 (line-beginning-position))))
+	(when block-end
+	  (delete-region org-dialog-eng--progress-marker block-end)
+	  (goto-char org-dialog-eng--progress-marker)
+	  ;; Stop the progress animation
+	  (org-dialog-eng--stop-progress-indicator)
+	  ;; Insert content
+	  (let ((start (point)))
+	    (insert new-content
+		    (if (string-suffix-p "\n" new-content) "" "\n"))
+	    ;; Fill the inserted region
+	    (fill-region start (point))))))))
+
+(defun org-dialog-eng--execute-prompt-block ()
+  "Execute the current prompt block using Claude.
+Returns t if executed successfully, nil otherwise."
+  (interactive)
+  (when-let* ((info (org-dialog-eng--current-block-info))
+	      (prompt-block-content (org-dialog-eng--get-prompt-block-content))
+	      (context (org-dialog-eng--get-document-context))
+	      (prompt (org-dialog-eng--format-prompt prompt-block-content context)))
+    ;; Insert initial "Thinking." and start animation
+    (org-dialog-eng--insert-assistant-block "Thinking.")
+
+    ;; Launch the claude process
+    (org-dialog-eng--start-claude-process prompt)
+    t)) ; Return t to indicate we handled the command
+
+
+
 (define-minor-mode org-dialog-eng-mode
-  "Minor mode for LLM integration in Org mode documents.
-
-This mode enables interactive dialogues with Large Language Models
-directly within your Org documents. Create PROMPT blocks and execute
-them with \\[org-ctrl-c-ctrl-c] to receive ASSISTANT responses.
-
-Key bindings:
-  \\[org-ctrl-c-ctrl-c] - Execute PROMPT block at point
-
-Usage:
-  1. Create a #+begin_prompt block with your question
-  2. Position cursor inside the block
-  3. Press \\[org-ctrl-c-ctrl-c]
-  4. Wait for the LLM to respond
-  5. The response appears in a #+begin_assistant block below
-
-All content before the prompt is sent as context, enabling
-context-aware conversations about your document."
-  :lighter " AI"
-  :group 'org-dialog-eng
+  "Minor mode for org-dialog-eng functionality."
+  :lighter " OrgDialog"
   (if org-dialog-eng-mode
-      (org-dialog-eng--setup)
-    (org-dialog-eng--teardown)))
-(defun org-dialog-eng--setup ()
-  "Set up org-dialog-eng-mode in the current buffer.
-Adds hooks and font-lock keywords."
-  ;; Hook into C-c C-c
-  (add-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-block nil t)
-
-  ;; Enable syntax highlighting
-  (org-dialog-eng--setup-font-lock)
-
-  ;; Refresh font-lock to apply immediately
-  (when (fboundp 'font-lock-flush)
-    (font-lock-flush)))
-
-(defun org-dialog-eng--teardown ()
-  "Clean up org-dialog-eng-mode in the current buffer.
-Removes hooks and font-lock keywords."
-  ;; Remove our C-c C-c hook
-  (remove-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-block t)
-
-  ;; Remove syntax highlighting
-  (org-dialog-eng--teardown-font-lock)
-
-  ;; Refresh font-lock
-  (when (fboundp 'font-lock-flush)
-    (font-lock-flush)))
+      (add-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-prompt-block nil t)
+    (remove-hook 'org-ctrl-c-ctrl-c-hook #'org-dialog-eng--execute-prompt-block t)))
 
 (provide 'org-dialog-eng)
-
-;;; org-dialog-eng.el ends here
